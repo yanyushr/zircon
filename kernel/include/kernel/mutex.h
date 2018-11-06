@@ -8,10 +8,11 @@
 
 #pragma once
 
+#include <arch/current_thread.h>
 #include <assert.h>
 #include <debug.h>
 #include <kernel/atomic.h>
-#include <kernel/thread.h>
+#include <kernel/wait.h>
 #include <stdint.h>
 #include <zircon/compiler.h>
 #include <zircon/thread_annotations.h>
