@@ -12,6 +12,8 @@
 
 #include <zircon/compiler.h>
 
+#include <type_traits>
+
 // Kernel counters are a facility designed to help field diagnostics and
 // to help devs properly dimension the load/clients/size of the kernel
 // constructs. It answers questions like:
@@ -43,8 +45,8 @@
 struct k_counter_desc {
     const char* name;
 };
-static_assert(sizeof(struct k_counter_desc) ==
-              sizeof(((struct percpu){}).counters[0]),
+static_assert(sizeof(k_counter_desc) ==
+              sizeof(std::remove_pointer_t<decltype(percpu::counters)>),
               "the kernel.ld ASSERT knows that these sizes match");
 
 // Define the descriptor and reserve the arena space for the counters.
