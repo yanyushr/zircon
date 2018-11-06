@@ -115,6 +115,21 @@ private:
     WAVLTreeNodeState<PtrType, bool> wavl_node_state_;
 };
 
+template <typename T, T>
+struct WAVLTreeNodeStateMemberTraits;
+
+template <typename Class, typename PtrType, typename RankType,
+          WAVLTreeNodeState<PtrType, RankType> Class::* Member>
+struct WAVLTreeNodeStateMemberTraits<WAVLTreeNodeState<PtrType, RankType> Class::*, Member> {
+    using PtrTraits = internal::ContainerPtrTraits<PtrType>;
+    static WAVLTreeNodeState<PtrType, RankType>& node_state(typename PtrTraits::RefType obj) {
+        return (obj.*Member);
+    }
+};
+
+template <auto Member>
+using WAVLTreeNodeStateMember = WAVLTreeNodeStateMemberTraits<decltype(Member), Member>;
+
 template <typename _KeyType,
           typename _PtrType,
           typename _KeyTraits  = DefaultKeyedObjectTraits<
