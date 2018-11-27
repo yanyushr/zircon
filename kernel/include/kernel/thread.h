@@ -12,6 +12,7 @@
 #include <arch/thread.h>
 #include <debug.h>
 #include <kernel/cpu.h>
+#include <kernel/fair_task_state.h>
 #include <kernel/spinlock.h>
 #include <kernel/wait.h>
 #include <list.h>
@@ -114,6 +115,8 @@ typedef struct thread {
     cpu_num_t curr_cpu;
     cpu_num_t last_cpu;      // last cpu the thread ran on, INVALID_CPU if it's never run
     cpu_mask_t cpu_affinity; // mask of cpus that this thread can run on
+
+    FairTaskState fair_task_state;
 
     // if blocked, a pointer to the wait queue
     struct wait_queue* blocking_wait_queue;

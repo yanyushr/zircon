@@ -214,7 +214,7 @@ public:
     // make_iterator : construct an iterator out of a pointer to an object
     iterator make_iterator(ValueType& obj) { return iterator(&obj); }
 
-    // is_empty : True if the tree has at least one element in it, false otherwise.
+    // is_empty : False if the tree has at least one element in it, true otherwise.
     bool is_empty() const { return root_ == nullptr; }
 
     // front
