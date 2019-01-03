@@ -47,14 +47,28 @@ public:
         return key() < other.key();
     }
 
+    // Returns true of the task state is currently enqueued in the runnable tree.
     bool InQueue() const {
         return run_queue_node_.InContainer();
     }
 
-    int64_t active() const { return active_; }
+    bool active() const { return active_; }
 
-    void OnInsert() { active_ = true; }
-    void OnRemove() { active_ = false; }
+    // Sets the task state to active (on a run queue). Returns true if the task
+    // was not previously active.
+    bool OnInsert() {
+        const bool was_active = active_;
+        active_ = true;
+        return !was_active;
+    }
+
+    // Sets the task state to inactive (not on a run queue). Returns true if the
+    // task was previously active.
+    bool OnRemove() {
+        const bool was_active = active_;
+        active_ = false;
+        return was_active;
+    }
 
 private:
     friend class FairScheduler;

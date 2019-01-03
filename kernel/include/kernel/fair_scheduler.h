@@ -62,6 +62,9 @@ private:
     // Returns the next thread to execute.
     thread_t* NextThread(thread_t* current_thread, thread_t* idle_thread) TA_REQ(thread_lock);
 
+    void QueueThread(thread_t* thread) TA_REQ(thread_lock);
+
+    void UpdateThread(thread_t* thread) TA_REQ(thread_lock);
     void UpdateAccounting(thread_t* current_thread, thread_t* next_thread) TA_REQ(thread_lock);
     void UpdatePeriod() TA_REQ(thread_lock);
 

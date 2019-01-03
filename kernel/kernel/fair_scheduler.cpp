@@ -40,7 +40,7 @@
 #define LOCAL_KTRACE2(probe, x, y)
 #endif
 
-#define LOCAL_TRACE 0
+#define LOCAL_TRACE 1
 
 #define SCHED_TRACEF(str, args...) LTRACEF("[%d] " str, arch_curr_cpu_num(), ##args)
 
@@ -276,16 +276,59 @@ void FairScheduler::UpdatePeriod() {
                  num_tasks, peak_tasks, normal_tasks, scheduling_period_grans_, utilization_grans_);
 }
 
+void FairScheduler::UpdateThread(thread_t* thread) {
+    if (thread_is_idle(thread)) {
+        return;
+    }
+
+    FairTaskState* const state = &thread->fair_task_state;
+
+    // Calculate the relative portion of the scheduling period in units of
+    // minimum granularity.
+    const auto relative_rate = weight_total_ / state->effective_weight();
+    const auto time_slice_grans = scheduling_period_grans_ / relative_rate;
+
+    // Calculate the time slice in ns and make sure it is big enough.
+    const auto time_slice = minimum_granularity_ns_.get() * time_slice_grans;
+    const int64_t time_slice_ns = ffl::Round<zx_duration_t>(time_slice);
+    const bool round_up = time_slice_ns < minimum_granularity_ns_.get();
+    state->time_slice_ns_ = round_up ? minimum_granularity_ns_ : zx::duration{time_slice_ns};
+
+    // Update virtual timeline.
+    state->virtual_start_time_ns_ = virtual_time_ns_ - state->lag_time_ns_;
+    state->virtual_finish_time_ns_ = state->virtual_start_time_ns_ + zx::duration{time_slice_ns};
+
+    SCHED_TRACEF("name=%s weight_total=%x weight=%x relative_rate=%x time_slice_ns=%ld "
+                 "grans=%ld lag=%ld vstart=%ld vfinish=%ld vtime=%ld\n",
+                 thread->name,
+                 weight_total_.raw_value(),
+                 state->effective_weight().raw_value(),
+                 TaskWeight{relative_rate}.raw_value(),
+                 time_slice_ns,
+                 ffl::Round<zx_duration_t>(time_slice_grans),
+                 state->lag_time_ns_.get(),
+                 state->virtual_start_time_ns_.get(),
+                 state->virtual_finish_time_ns_.get(),
+                 virtual_time_ns_.get());
+}
+
+void FairScheduler::QueueThread(thread_t* thread) {
+    DEBUG_ASSERT(thread->state == THREAD_READY);
+    if (!thread_is_idle(thread)) {
+        run_queue_.insert(thread);
+    }
+}
+
 void FairScheduler::Insert(thread_t* thread) {
     DEBUG_ASSERT(thread->state == THREAD_READY);
+    DEBUG_ASSERT(!thread_is_idle(thread));
+
     FairTaskState* const state = &thread->fair_task_state;
 
     // Ensure insertion happens only once, even if Resume is called multiple times.
-    if (!state->active()) {
-        state->OnInsert();
-
+    if (state->OnInsert()) {
         runnable_task_count_++;
-        DEBUG_ASSERT_MSG(runnable_task_count_ >= 0, "runnable_task_count_=%ld", runnable_task_count_);
+        DEBUG_ASSERT(runnable_task_count_ >= 0);
         UpdatePeriod();
 
         thread->curr_cpu = arch_curr_cpu_num();
@@ -298,46 +341,21 @@ void FairScheduler::Insert(thread_t* thread) {
         const auto lag_ns = state->lag_time_ns_.get() / weight_total_;
         virtual_time_ns_ -= zx::duration{ffl::Round<zx_duration_t>(lag_ns)};
 
-        const auto relative_rate = weight_total_ / state->effective_weight();
-        const auto time_slice_grans = scheduling_period_grans_ / relative_rate;
-
-        // Calculate the time slice and make sure it is big enough.
-        const auto time_slice = minimum_granularity_ns_.get() * time_slice_grans;
-        const int64_t time_slice_ns = ffl::Round<int64_t>(time_slice);
-        const bool round_up = time_slice_ns < minimum_granularity_ns_.get();
-        state->time_slice_ns_ = round_up ? minimum_granularity_ns_ : zx::duration{time_slice_ns};
-
-        SCHED_TRACEF("name=%s weight_total=%x weight=%x relative_rate=%x time_slice_ns=%ld\n",
-                     thread->name,
-                     weight_total_.raw_value(),
-                     state->effective_weight().raw_value(),
-                     TaskWeight{relative_rate}.raw_value(),
-                     time_slice_ns);
-
-        state->virtual_start_time_ns_ = virtual_time_ns_ - state->lag_time_ns_;
-        state->virtual_finish_time_ns_ = state->virtual_start_time_ns_ + zx::duration{time_slice_ns};
-
-        SCHED_TRACEF("name=%s vstart=%ld vfinish=%ld vtime=%ld\n",
-                     thread->name,
-                     state->virtual_start_time_ns_.get(),
-                     state->virtual_finish_time_ns_.get(),
-                     virtual_time_ns_.get());
-
-        DEBUG_ASSERT(!thread_is_idle(thread));
-        run_queue_.insert(thread);
+        UpdateThread(thread);
+        QueueThread(thread);
     }
 }
 
 void FairScheduler::Remove(thread_t* thread) {
+    DEBUG_ASSERT(!thread_is_idle(thread));
+
     FairTaskState* const state = &thread->fair_task_state;
     DEBUG_ASSERT(!state->InQueue());
 
     // Ensure that removal happens only once, even if Block() is called multiple times.
-    if (state->active()) {
-        state->OnRemove();
-
+    if (state->OnRemove()) {
         runnable_task_count_--;
-        DEBUG_ASSERT_MSG(runnable_task_count_ >= 0, "runnable_task_count_=%ld", runnable_task_count_);
+        DEBUG_ASSERT(runnable_task_count_ >= 0);
         UpdatePeriod();
 
         const zx::time now{current_time()};
@@ -372,7 +390,6 @@ void FairScheduler::UpdateAccounting(thread_t* current_thread, thread_t* next_th
     DEBUG_ASSERT(next_thread->state == THREAD_RUNNING);
 
     FairTaskState* const current_state = &current_thread->fair_task_state;
-    FairTaskState* const next_state = &next_thread->fair_task_state;
 
     SCHED_TRACEF("current=%s next=%s\n", current_thread->name, next_thread->name);
 
@@ -388,67 +405,11 @@ void FairScheduler::UpdateAccounting(thread_t* current_thread, thread_t* next_th
     current_state->runtime_ns_ += actual_runtime_ns;
     current_state->lag_time_ns_ = current_state->time_slice_ns_ - actual_runtime_ns;
 
-    if (!thread_is_idle(next_thread)) {
-        // Update the accounting for the thread that is about to run.
-        const auto relative_rate = weight_total_ / next_state->effective_weight();
-        const auto time_slice_grans = scheduling_period_grans_ / relative_rate;
+    UpdateThread(next_thread);
 
-        // Calculate the time slice and make sure it is big enough.
-        const auto time_slice = minimum_granularity_ns_.get() * time_slice_grans;
-        const int64_t time_slice_ns = ffl::Round<zx_duration_t>(time_slice);
-        const bool round_up = time_slice_ns < minimum_granularity_ns_.get();
-        next_state->time_slice_ns_ = round_up ? minimum_granularity_ns_ : zx::duration{time_slice_ns};
-
-        SCHED_TRACEF("name=%s weight_total=%x weight=%x relative_rate=%x time_slice_ns=%ld grans=%ld lag=%ld\n",
-                     next_thread->name,
-                     weight_total_.raw_value(),
-                     next_state->effective_weight().raw_value(),
-                     TaskWeight{relative_rate}.raw_value(),
-                     time_slice_ns,
-                     ffl::Round<zx_duration_t>(time_slice_grans),
-                     next_state->lag_time_ns_.get());
-
-        next_state->virtual_start_time_ns_ = virtual_time_ns_ - next_state->lag_time_ns_;
-        next_state->virtual_finish_time_ns_ = next_state->virtual_start_time_ns_ +
-                                              zx::duration{time_slice_ns};
-
-        SCHED_TRACEF("name=%s vstart=%ld vfinish=%ld vtime=%ld\n",
-                     next_thread->name,
-                     next_state->virtual_start_time_ns_.get(),
-                     next_state->virtual_finish_time_ns_.get(),
-                     virtual_time_ns_.get());
-    }
-
-    if (next_thread != current_thread && !thread_is_idle(current_thread) && current_thread->state == THREAD_READY) {
-        const auto relative_rate = weight_total_ / current_state->effective_weight();
-        const auto time_slice_grans = scheduling_period_grans_ / relative_rate;
-
-        // Calculate the time slice and make sure it is big enough.
-        const auto time_slice = minimum_granularity_ns_.get() * time_slice_grans;
-        const int64_t time_slice_ns = ffl::Round<int64_t>(time_slice);
-        const bool round_up = time_slice_ns < minimum_granularity_ns_.get();
-        current_state->time_slice_ns_ = round_up ? minimum_granularity_ns_ : zx::duration{time_slice_ns};
-
-        SCHED_TRACEF("name=%s weight_total=%x weight=%x relative_rate=%x time_slice_ns=%ld lag=%ld\n",
-                     current_thread->name,
-                     weight_total_.raw_value(),
-                     current_state->effective_weight().raw_value(),
-                     TaskWeight{relative_rate}.raw_value(),
-                     time_slice_ns,
-                     current_state->lag_time_ns_.get());
-
-        current_state->virtual_start_time_ns_ = virtual_time_ns_ - current_state->lag_time_ns_;
-        current_state->virtual_finish_time_ns_ = current_state->virtual_start_time_ns_ +
-                                                 zx::duration{time_slice_ns};
-
-        SCHED_TRACEF("name=%s vstart=%ld vfinish=%ld vtime=%ld\n",
-                     current_thread->name,
-                     current_state->virtual_start_time_ns_.get(),
-                     current_state->virtual_finish_time_ns_.get(),
-                     virtual_time_ns_.get());
-
-        DEBUG_ASSERT(!thread_is_idle(current_thread));
-        run_queue_.insert(current_thread);
+    if (current_thread->state == THREAD_READY) {
+        UpdateThread(current_thread);
+        QueueThread(current_thread);
     }
 }
 
