@@ -79,6 +79,15 @@ template("boot_shim") {
             type = "bin"  # TODO(mcgrathr): ???
           },
         ]
+        if (board == "qemu") {
+          images += [
+            {
+              name = "qemu-kernel"
+              type = "kernel"
+              path = rebase_path(outputs[0], root_build_dir)
+            },
+          ]
+        }
 
         # TODO: later
         bootimage_inputs = outputs
