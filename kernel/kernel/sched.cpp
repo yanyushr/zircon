@@ -30,11 +30,11 @@
 #define MAX_PRIORITY_ADJ 4 // +/- priority levels from the base priority
 
 // ktraces just local to this file
-#define LOCAL_KTRACE 0
+#define LOCAL_KTRACE 1
 
 #if LOCAL_KTRACE
-#define LOCAL_KTRACE0(probe) ktrace_probe0(probe)
-#define LOCAL_KTRACE2(probe, x, y) ktrace_probe2(probe, x, y)
+#define LOCAL_KTRACE0(probe) ktrace_probe0(probe, true)
+#define LOCAL_KTRACE2(probe, x, y) ktrace_probe2(probe, x, y, true)
 #else
 #define LOCAL_KTRACE0(probe)
 #define LOCAL_KTRACE2(probe, x, y)
@@ -740,7 +740,7 @@ void sched_preempt_timer_tick(zx_time_t now) {
     }
 
     LOCAL_KTRACE2("sched_preempt_timer_tick", (uint32_t)current_thread->user_tid,
-                  current_thread->remaining_time_slice);
+                  static_cast<uint32_t>(current_thread->remaining_time_slice));
 
     // did this tick complete the time slice?
     DEBUG_ASSERT(now > current_thread->last_started_running);
@@ -797,8 +797,8 @@ void sched_resched_internal() {
     thread_t* oldthread = current_thread;
     oldthread->preempt_pending = false;
 
-    LOCAL_KTRACE2("resched old pri", (uint32_t)oldthread->user_tid, effec_priority(oldthread));
-    LOCAL_KTRACE2("resched new pri", (uint32_t)newthread->user_tid, effec_priority(newthread));
+    LOCAL_KTRACE2("resched old pri", (uint32_t)oldthread->user_tid, oldthread->effec_priority);
+    LOCAL_KTRACE2("resched new pri", (uint32_t)newthread->user_tid, newthread->effec_priority);
 
     // call this even if we're not changing threads, to handle the case where another
     // core rescheduled us but the work disappeared before we got to run.
@@ -851,8 +851,8 @@ void sched_resched_internal() {
         percpu[cpu].stats.idle_time = zx_duration_add_duration(percpu[cpu].stats.idle_time, delta);
     }
 
-    LOCAL_KTRACE2("CS timeslice old", (uint32_t)oldthread->user_tid, oldthread->remaining_time_slice);
-    LOCAL_KTRACE2("CS timeslice new", (uint32_t)newthread->user_tid, newthread->remaining_time_slice);
+    LOCAL_KTRACE2("CS timeslice old", (uint32_t)oldthread->user_tid, (uint32_t)oldthread->remaining_time_slice);
+    LOCAL_KTRACE2("CS timeslice new", (uint32_t)newthread->user_tid, (uint32_t)newthread->remaining_time_slice);
 
     ktrace(TAG_CONTEXT_SWITCH, (uint32_t)newthread->user_tid,
            (cpu | (oldthread->state << 8) |

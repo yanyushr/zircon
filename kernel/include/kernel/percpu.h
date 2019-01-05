@@ -32,7 +32,9 @@ struct percpu {
     struct list_node run_queue[NUM_PRIORITIES];
     uint32_t run_queue_bitmap;
 
+#if WITH_FAIR_SCHEDULER
     FairScheduler fair_runqueue;
+#endif
 
 #if WITH_LOCK_DEP
     // state for runtime lock validation when in irq context

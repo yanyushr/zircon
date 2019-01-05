@@ -48,7 +48,7 @@ public:
     }
 
     constexpr Integer raw_value() const { return value_; }
-    constexpr Value<Format> value() const { return {value_}; }
+    constexpr Value<Format> value() const { return Value<Format>{value_}; }
 
     constexpr Integer Ceiling() const {
         const auto value = Format::ToIntermediate(value_);
@@ -104,91 +104,91 @@ inline constexpr auto Round(T expression) {
 // initialize a Fixed variable from an integer.
 template <typename Integer, typename Enabled = std::enable_if_t<std::is_integral_v<Integer>>>
 inline constexpr auto FromInteger(Integer value) {
-  return ToExpression<Integer>{value};
+    return ToExpression<Integer>{value};
 }
 
 // Utility to create an Expression node from an integer ratio. May be used to
 // initialize a Fixed variable from a ratio.
 template <typename Integer, typename Enabled = std::enable_if_t<std::is_integral_v<Integer>>>
 inline constexpr auto FromRatio(Integer numerator, Integer denominator) {
-  return DivisionExpression<Integer, Integer>{numerator, denominator};
+    return DivisionExpression<Integer, Integer>{numerator, denominator};
 }
 
 // Utility to coerce the an expression to the given precision.
 template <size_t FractionalBits, typename T>
 inline constexpr auto ToPrecision(T expression) {
-  return PrecisionExpression<FractionalBits, T>{Init{}, expression};
+    return PrecisionExpression<FractionalBits, T>{Init{}, expression};
 }
 
 // Utility to create a value Expression from a raw integer value already in the
 // fixed-point format with the given number of fractional bits.
 template <size_t FractionalBits, typename Integer>
 inline constexpr auto FromRaw(Integer value) {
-  return ValueExpression<Integer, FractionalBits>{value};
+    return ValueExpression<Integer, FractionalBits>{value};
 }
 
 // Relational operators.
 template <typename Left, typename Right,
           typename Enabled = EnableIfComparisonExpression<Left, Right>>
 inline constexpr bool operator<(Left left, Right right) {
-  using Traits = ComparisonTraits<Left, Right>;
-  return Traits::Left(left) < Traits::Right(right);
+    using Traits = ComparisonTraits<Left, Right>;
+    return Traits::Left(left) < Traits::Right(right);
 }
 template <typename Left, typename Right,
           typename Enabled = EnableIfComparisonExpression<Left, Right>>
 inline constexpr bool operator>(Left left, Right right) {
-  using Traits = ComparisonTraits<Left, Right>;
-  return Traits::Left(left) > Traits::Right(right);
+    using Traits = ComparisonTraits<Left, Right>;
+    return Traits::Left(left) > Traits::Right(right);
 }
 template <typename Left, typename Right,
           typename Enabled = EnableIfComparisonExpression<Left, Right>>
 inline constexpr bool operator<=(Left left, Right right) {
-  using Traits = ComparisonTraits<Left, Right>;
-  return Traits::Left(left) <= Traits::Right(right);
+    using Traits = ComparisonTraits<Left, Right>;
+    return Traits::Left(left) <= Traits::Right(right);
 }
 template <typename Left, typename Right,
           typename Enabled = EnableIfComparisonExpression<Left, Right>>
 inline constexpr bool operator>=(Left left, Right right) {
-  using Traits = ComparisonTraits<Left, Right>;
-  return Traits::Left(left) >= Traits::Right(right);
+    using Traits = ComparisonTraits<Left, Right>;
+    return Traits::Left(left) >= Traits::Right(right);
 }
 template <typename Left, typename Right,
           typename Enabled = EnableIfComparisonExpression<Left, Right>>
 inline constexpr bool operator==(Left left, Right right) {
-  using Traits = ComparisonTraits<Left, Right>;
-  return Traits::Left(left) == Traits::Right(right);
+    using Traits = ComparisonTraits<Left, Right>;
+    return Traits::Left(left) == Traits::Right(right);
 }
 template <typename Left, typename Right,
           typename Enabled = EnableIfComparisonExpression<Left, Right>>
 inline constexpr bool operator!=(Left left, Right right) {
-  using Traits = ComparisonTraits<Left, Right>;
-  return Traits::Left(left) != Traits::Right(right);
+    using Traits = ComparisonTraits<Left, Right>;
+    return Traits::Left(left) != Traits::Right(right);
 }
 
 // Arithmetic operators.
 template <typename Left, typename Right,
           typename Enabled = EnableIfBinaryExpression<Left, Right>>
 inline constexpr auto operator+(Left left, Right right) {
-  return AdditionExpression<Left, Right>{left, right};
+    return AdditionExpression<Left, Right>{left, right};
 }
 template <typename T, typename Enabled = EnableIfUnaryExpression<T>>
 inline constexpr auto operator-(T value) {
-  return NegationExpression<T>{Init{}, value};
+    return NegationExpression<T>{Init{}, value};
 }
 template <typename Left, typename Right,
           typename Enabled = EnableIfBinaryExpression<Left, Right>>
 inline constexpr auto operator-(Left left, Right right) {
-  return SubtractionExpression<Left, Right>{left, right};
+    return SubtractionExpression<Left, Right>{left, right};
 }
 template <typename Left, typename Right,
           typename Enabled = EnableIfBinaryExpression<Left, Right>>
 inline constexpr auto operator*(Left left, Right right) {
-  return MultiplicationExpression<Left, Right>{left, right};
+    return MultiplicationExpression<Left, Right>{left, right};
 }
 template <typename Left, typename Right,
           typename Enabled = EnableIfBinaryExpression<Left, Right>>
 inline constexpr auto operator/(Left left, Right right) {
-  return DivisionExpression<Left, Right>{left, right};
+    return DivisionExpression<Left, Right>{left, right};
 }
 
 } // namespace ffl

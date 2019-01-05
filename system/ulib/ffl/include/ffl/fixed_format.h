@@ -27,7 +27,7 @@ struct Value<FixedFormat<Integer, FractionalBits>> {
     using Format = FixedFormat<Integer, FractionalBits>;
     using Intermediate = typename Format::Intermediate;
 
-    constexpr Value(Intermediate value)
+    explicit constexpr Value(Intermediate value)
         : value{value} {}
     const Intermediate value;
 };
@@ -171,11 +171,11 @@ struct FixedFormat {
         if constexpr (SourceFormat::FractionalBits >= FractionalBits) {
             const size_t delta = SourceFormat::FractionalBits - FractionalBits;
             const Intermediate power = 1 << delta;
-            return Round(value.value, ToPlace<delta>) / power;
+            return Value<FixedFormat>{Round(value.value, ToPlace<delta>) / power};
         } else {
             const size_t delta = FractionalBits - SourceFormat::FractionalBits;
             const Intermediate power = 1 << delta;
-            return ToIntermediate(value.value) * power;
+            return Value<FixedFormat>{ToIntermediate(value.value) * power};
         }
     }
 };

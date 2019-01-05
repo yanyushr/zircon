@@ -25,9 +25,12 @@ __BEGIN_CDECLS
 #define KTRACE_TAG_32B(e,g)       KTRACE_TAG(e,g,32)
 #define KTRACE_TAG_NAME(e,g)      KTRACE_TAG(e,g,48)
 
+#define KTRACE_TAG_SPARE(tag, spare) (tag | (((spare)&0xF)<<4))
+
 #define KTRACE_LEN(tag)           (((tag)&0xF)<<3)
 #define KTRACE_GROUP(tag)         (((tag)>>20)&0xFFF)
 #define KTRACE_EVENT(tag)         (((tag)>>8)&0xFFF)
+#define KTRACE_SPARE(tag)         (((tag)>>4)&0xF)
 
 #define KTRACE_HDRSIZE            (16)
 #define KTRACE_RECSIZE            (32)

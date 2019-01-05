@@ -25,7 +25,6 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/debug.cpp \
 	$(LOCAL_DIR)/dpc.cpp \
 	$(LOCAL_DIR)/event.cpp \
-	$(LOCAL_DIR)/fair_scheduler.cpp \
 	$(LOCAL_DIR)/init.cpp \
 	$(LOCAL_DIR)/mp.cpp \
 	$(LOCAL_DIR)/mutex.cpp \
@@ -33,5 +32,11 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/thread.cpp \
 	$(LOCAL_DIR)/timer.cpp \
 	$(LOCAL_DIR)/wait.cpp
+
+ifeq ($(call TOBOOL,$(ENABLE_FAIR_SCHEDULER)),true)
+MODULE_SRCS += $(LOCAL_DIR)/fair_scheduler.cpp
+else
+MODULE_SRCS += $(LOCAL_DIR)/sched.cpp
+endif
 
 include make/module.mk

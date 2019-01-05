@@ -21,12 +21,15 @@ struct ktrace_probe_info {
     uint32_t num;
 } __ALIGNED(16); // align on multiple of 16 to match linker packing of the ktrace_probe section
 
-void* ktrace_open(uint32_t tag);
+void* ktrace_open(uint32_t tag, bool in_irq = false);
 void ktrace_tiny(uint32_t tag, uint32_t arg);
 static inline void ktrace(uint32_t tag, uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
-    uint32_t* data = (uint32_t*) ktrace_open(tag);
+    uint32_t* data = (uint32_t*)ktrace_open(tag);
     if (data) {
-        data[0] = a; data[1] = b; data[2] = c; data[3] = d;
+        data[0] = a;
+        data[1] = b;
+        data[2] = c;
+        data[3] = d;
     }
 }
 
@@ -34,32 +37,34 @@ static inline void ktrace_ptr(uint32_t tag, const void* ptr, uint32_t c, uint32_
     ktrace(tag, (uint32_t)((uintptr_t)ptr >> 32), (uint32_t)((uintptr_t)ptr), c, d);
 }
 
-#define _ktrace_probe_prologue(_name) \
-    static ktrace_probe_info_t info = { NULL, _name, 0 };       \
-    __USED __SECTION(".data.rel.ro.ktrace_probe")               \
-    static ktrace_probe_info_t *const register_info = &info
+#define _ktrace_probe_prologue(_name)                   \
+    static ktrace_probe_info_t info = {NULL, _name, 0}; \
+    __USED __SECTION(".data.rel.ro.ktrace_probe") static ktrace_probe_info_t* const register_info = &info
 
-#define ktrace_probe0(_name) do {                               \
-    _ktrace_probe_prologue(_name);                              \
-    ktrace_open(TAG_PROBE_16(info.num));                        \
-} while (0)
+#define ktrace_probe0(_name, in_irq...)                \
+    do {                                               \
+        _ktrace_probe_prologue(_name);                 \
+        ktrace_open(TAG_PROBE_16(info.num), ##in_irq); \
+    } while (0)
 
-#define ktrace_probe2(_name,arg0,arg1) do {                  \
-    _ktrace_probe_prologue(_name);                           \
-    uint32_t* args = (uint32_t*)ktrace_open(TAG_PROBE_24(info.num));    \
-    if (args) {                                              \
-      args[0] = arg0;                                        \
-      args[1] = arg1;                                        \
-    }                                                        \
-} while (0)
+#define ktrace_probe2(_name, arg0, arg1, in_irq...)                                \
+    do {                                                                           \
+        _ktrace_probe_prologue(_name);                                             \
+        uint32_t* args = (uint32_t*)ktrace_open(TAG_PROBE_24(info.num), ##in_irq); \
+        if (args) {                                                                \
+            args[0] = arg0;                                                        \
+            args[1] = arg1;                                                        \
+        }                                                                          \
+    } while (0)
 
-#define ktrace_probe64(_name,arg) do {                  \
-    _ktrace_probe_prologue(_name);                           \
-    uint64_t* args = (uint64_t*)ktrace_open(TAG_PROBE_24(info.num));    \
-    if (args) {                                              \
-      *args = arg;                                           \
-    }                                                        \
-} while (0)
+#define ktrace_probe64(_name, arg)                                       \
+    do {                                                                 \
+        _ktrace_probe_prologue(_name);                                   \
+        uint64_t* args = (uint64_t*)ktrace_open(TAG_PROBE_24(info.num)); \
+        if (args) {                                                      \
+            *args = arg;                                                 \
+        }                                                                \
+    } while (0)
 
 void ktrace_name_etc(uint32_t tag, uint32_t id, uint32_t arg, const char* name, bool always);
 static inline void ktrace_name(uint32_t tag, uint32_t id, uint32_t arg, const char* name) {

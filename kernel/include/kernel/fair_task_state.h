@@ -7,8 +7,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
-#include <kernel/time.h>
+#include <zircon/types.h>
 
 #include <fbl/intrusive_wavl_tree.h>
 #include <ffl/fixed.h>
@@ -23,9 +22,25 @@ typedef struct thread thread_t;
 // a weight of 1.0.
 using TaskWeight = ffl::Fixed<int32_t, 12>;
 
+using SchedDuration = ffl::Fixed<zx_duration_t, 0>;
+using SchedTime = ffl::Fixed<zx_time_t, 0>;
+
+template <typename T>
+constexpr auto SchedNanoseconds(T nanooseconds) {
+    return ffl::FromInteger(ZX_NSEC(nanooseconds));
+}
+template <typename T>
+constexpr auto SchedMicroseconds(T microseconds) {
+    return ffl::FromInteger(ZX_USEC(microseconds));
+}
+template <typename T>
+constexpr auto SchedMilliseconds(T milliseconds) {
+    return ffl::FromInteger(ZX_MSEC(milliseconds));
+}
+
 class FairTaskState {
 public:
-    using KeyType = std::pair<zx::time, uintptr_t>;
+    using KeyType = std::pair<SchedTime, uintptr_t>;
 
     static constexpr TaskWeight kDefaultWeight = ffl::FromInteger(1);
 
@@ -79,13 +94,13 @@ private:
 
     // TODO(eieio): Some of the values below are only relevant when running,
     // while others only while ready. Consider using a union to save space.
-    zx::time virtual_start_time_ns_{0};
-    zx::time virtual_finish_time_ns_{0};
+    SchedTime virtual_start_time_ns_{SchedNanoseconds(0)};
+    SchedTime virtual_finish_time_ns_{SchedNanoseconds(0)};
 
-    zx::duration time_slice_ns_{0};
-    zx::duration lag_time_ns_{0};
+    SchedDuration time_slice_ns_{SchedNanoseconds(0)};
+    SchedDuration lag_time_ns_{SchedNanoseconds(0)};
 
-    zx::duration runtime_ns_{0};
+    SchedDuration runtime_ns_{SchedNanoseconds(0)};
 
     bool active_{false};
 };

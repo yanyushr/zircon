@@ -262,7 +262,7 @@ void ktrace_tiny(uint32_t tag, uint32_t arg) {
     }
 }
 
-void* ktrace_open(uint32_t tag) {
+void* ktrace_open(uint32_t tag, bool in_irq) {
     ktrace_state_t* ks = &KTRACE_STATE;
     if (!(tag & atomic_load(&ks->grpmask))) {
         return nullptr;
@@ -277,8 +277,8 @@ void* ktrace_open(uint32_t tag) {
 
     ktrace_header_t* hdr = (ktrace_header_t*) (ks->buffer + off);
     hdr->ts = ktrace_timestamp();
-    hdr->tag = tag;
-    hdr->tid = (uint32_t)get_current_thread()->user_tid;
+    hdr->tag = KTRACE_TAG_SPARE(tag, in_irq ? 1 : 0);
+    hdr->tid = in_irq ? arch_curr_cpu_num() : (uint32_t)get_current_thread()->user_tid;
     return hdr + 1;
 }
 
