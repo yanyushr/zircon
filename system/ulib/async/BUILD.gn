@@ -40,6 +40,13 @@ library("async-cpp") {
           ]) {
     sdk_headers += [ "lib/async/$file" ]
   }
+  public_deps = [
+    # <lib/async/cpp/task.h> has #include <lib/zx/time.h>.
+    "$zx/system/ulib/zx:headers",
+
+    # <lib/async/cpp/task.h> has #include <fbl/function.h>.
+    "$zx/system/ulib/fbl:headers",
+  ]
   sources = [
     "exception.cpp",
     "receiver.cpp",

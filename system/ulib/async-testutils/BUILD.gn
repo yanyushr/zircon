@@ -17,6 +17,17 @@ library("async-testutils") {
     "test_loop_dispatcher.cpp",
   ]
   configs += [ "$zx/public/gn/config:visibility_hidden" ]
+  public_deps = [
+    # <lib/async-testutils/dispatcher.h_stub> has #include <lib/async/dispatcher.h>.
+    "$zx/system/ulib/async:headers",
+
+    # <lib/async-testutils/test_loop_dispatcher.h> has #include <fbl/macros.h>.
+    "$zx/system/ulib/fbl:headers",
+
+    # <lib/async-testutils/dispatcher.h_stub> has #include <lib/zx/time.h>.
+    "$zx/system/ulib/zx:headers",
+
+  ]
   deps = [
     "$zx/system/ulib/async",
     "$zx/system/ulib/async:async-cpp",

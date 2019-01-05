@@ -86,14 +86,27 @@ foreach(cpu, standard_fuchsia_cpus) {
   # TODO(mcgrathr): Temporary hacks for integrating with the legacy Fuchsia
   # GN build.
   if (current_toolchain == default_toolchain) {
+    # This functions as the top-level target for integrating into the
+    # legacy Fuchsia GN build (what //scritps/build-zircon.sh builds)
+    # and also as the build API module used by the Fuchsia GN build's
+    # integration support (zircon_legacy in //build/config/fuchsia/zircon.gni).
     build_api_module("legacy-$cpu") {
+      testonly = true
+      deps = [
+        ":ids-$cpu",
+        ":legacy-deps-$cpu",
+        ":manifest-$cpu",
+      ]
+      data_keys = [ "images" ]
+    }
+
+    group("legacy-deps-$cpu") {
       testonly = true
       deps = [
         ":$cpu",
         ":boards-$cpu",
         "$zx/system/ulib:asan-manifest-$cpu",
       ]
-      data_keys = [ "images" ]
     }
 
     pkg_export("manifest-$cpu") {
@@ -172,7 +185,7 @@ if (current_toolchain == default_toolchain) {
       "$root_build_dir/elf-$current_cpu.list",
     ]
     deps = [
-      ":legacy-$current_cpu($default_toolchain)",
+      ":legacy-deps-$current_cpu($default_toolchain)",
     ]
     data_keys = [ "elf_link_output" ]
   }
