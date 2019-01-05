@@ -27,7 +27,7 @@ if (current_toolchain == default_toolchain) {
   # Install the host developer tools for the running host platform in the
   # "$root_build_dir/tools/" directory.
   tools_rspfile = "$target_gen_dir/tools.rsp"
-  write_data("tools._rsp") {
+  generated_file("tools._rsp") {
     visibility = [ ":tools" ]
     testonly = true
     outputs = [
@@ -106,7 +106,7 @@ foreach(cpu, standard_fuchsia_cpus) {
       ]
     }
 
-    write_data("boards-$cpu") {
+    generated_file("boards-$cpu") {
       testonly = true
       outputs = [
         "$root_build_dir/export/$target_name.list",
@@ -160,7 +160,7 @@ if (current_toolchain == default_toolchain) {
     }
   }
 } else if (toolchain.environment == "user") {
-  write_data("elf-$current_cpu.list") {
+  generated_file("elf-$current_cpu.list") {
     testonly = true
     outputs = [
       "$root_build_dir/elf-$current_cpu.list",

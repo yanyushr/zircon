@@ -15,7 +15,7 @@ template("zbi_input") {
   manifest_target = "$target_name._manifest"
   manifest_file = "$target_gen_dir/${target_name}.manifest"
 
-  write_data(manifest_target) {
+  generated_file(manifest_target) {
     visibility = [ ":$input_target" ]
     forward_variables_from(invoker,
                            [
@@ -140,7 +140,7 @@ template("zbi") {
   }
 
   # Generate a response file of input arguments collected from metadata.
-  write_data(rspfile_target) {
+  generated_file(rspfile_target) {
     visibility = [ ":$zbi_target" ]
     forward_variables_from(invoker, [ "testonly" ])
     deps = [
@@ -236,7 +236,7 @@ template("devmgr_config") {
   main_target = target_name
   contents_target = "$target_name._devmgr_config"
 
-  metadata_resource(contents_target) {
+  generated_resource(contents_target) {
     visibility = [ ":$main_target" ]
     forward_variables_from(invoker,
                            [

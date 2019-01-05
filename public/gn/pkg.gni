@@ -6,7 +6,7 @@
 # with the old makefile build as used by the higher-layer Fuchsia GN build.
 
 template("pkg_export") {
-  write_data(target_name) {
+  generated_file(target_name) {
     outputs = [
       "$root_build_dir/export/$target_name",
     ]

@@ -23,7 +23,7 @@
 #     is omitted then $data_keys is required.
 #
 template("build_api_module") {
-  write_data(target_name) {
+  generated_file(target_name) {
     outputs = [
       "$root_build_dir/$target_name.json",
     ]

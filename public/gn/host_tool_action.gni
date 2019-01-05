@@ -29,7 +29,7 @@ template("_host_tool_action_target") {
   # the executable itself), then "--", then the arguments that make up the
   # command line prefix to invoke the tool.  host_tool_action.sh consumes that.
   rspfile = "$target_gen_dir/$target_name._host_tool_action.rsp"
-  write_data("_rspfile.$action_target") {
+  generated_file("_rspfile.$action_target") {
     deps = [
       ":_tool.$action_target",
     ]

@@ -31,9 +31,9 @@ template("resource") {
   }
 }
 
-# Looks just like a metadata_file() target but $outputs is like resource().
-template("metadata_resource") {
-  write_data(target_name) {
+# Looks just like a generated_file() target but $outputs is like resource().
+template("generated_resource") {
+  generated_file(target_name) {
     forward_variables_from(invoker, "*", [ "metadata" ])
     assert(outputs == [ outputs[0] ],
            "generated_resource() requires a single element in `outputs")

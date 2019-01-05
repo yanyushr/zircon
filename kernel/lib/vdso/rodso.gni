@@ -7,7 +7,7 @@
 import("$zx/public/gn/toolchain/c_utils.gni")
 
 template("link_output_rspfile") {
-  write_data(target_name) {
+  generated_file(target_name) {
     forward_variables_from(invoker,
                            [
                              "deps",
