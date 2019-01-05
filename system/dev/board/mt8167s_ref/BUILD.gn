@@ -1,4 +1,4 @@
-# Copyright 2018 The Fuchsia Authors. All rights reserved.
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -12,6 +12,7 @@ driver("mt8167s_ref") {
     "mt8167-gpu.cpp",
     "mt8167-i2c.cpp",
     "mt8167-sdio.cpp",
+    "mt8167-sensors.cpp",
     "mt8167-soc.cpp",
     "mt8167-thermal.cpp",
     "mt8167-touch.cpp",

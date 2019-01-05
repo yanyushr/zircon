@@ -1,4 +1,4 @@
-# Copyright 2018 The Fuchsia Authors. All rights reserved.
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -16,19 +16,18 @@ driver("ftl") {
 
 # Also used by ftl-test.
 source_set("common") {
-  visibility = [
-    ":*",
-    "test:*",
-  ]
+  visibility = [ "./*" ]
   sources = [
     "block_device.cpp",
     "nand_driver.cpp",
     "nand_operation.cpp",
     "oob_doubler.cpp",
   ]
-  deps = [
+  public_deps = [
     "$zx/system/banjo/ddk-protocol-badblock",
+    "$zx/system/banjo/ddk-protocol-block",
     "$zx/system/banjo/ddk-protocol-nand",
+    "$zx/system/fidl/fuchsia-hardware-block:c",
     "$zx/system/fidl/fuchsia-hardware-nand:c",
     "$zx/system/ulib/ddk",
     "$zx/system/ulib/ddktl",

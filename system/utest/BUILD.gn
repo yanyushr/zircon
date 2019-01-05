@@ -1,4 +1,4 @@
-# Copyright 2018 The Fuchsia Authors. All rights reserved.
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -16,6 +16,7 @@ if (current_cpu != "") {
       "$zx/system/core/bootsvc:bootsvc-tests",
       "$zx/system/core/virtcon:virtual-console-test",
       "$zx/system/dev/block/ftl/test",
+      "$zx/system/dev/block/fvm/test",
       "$zx/system/dev/nand/broker:nand",
       "$zx/system/dev/nand/nandpart:nandpart-test",
       "$zx/system/dev/nand/ram-nand:ram-nand-test",
@@ -23,9 +24,9 @@ if (current_cpu != "") {
       "$zx/system/uapp/disk-pave:install-disk-image-test",
       "$zx/system/ulib/inspect/test",
       "$zx/system/ulib/kvstore:kvstore-test",
+      "$zx/system/ulib/pretty:pretty-test",
       "$zx/system/ulib/tftp:tftp-test",
       "$zx/system/ulib/zxtest/test",
-      "$zx/system/ulib/pretty:pretty-test",
       "abigen",
       "async",
       "async-loop",
