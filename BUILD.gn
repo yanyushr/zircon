@@ -103,6 +103,12 @@ foreach(cpu, standard_fuchsia_cpus) {
         ":$cpu",
         ":tools",
         ":ulib-$cpu",
+
+        # Separately listed because they're reached by dependencies only on x64.
+        "$zx/system/banjo/ddk-protocol-acpi",
+        "$zx/system/banjo/ddk-protocol-intelgpucore",
+        "$zx/system/banjo/ddk-protocol-intelhda-codec",
+        "$zx/system/banjo/ddk-protocol-intelhda-dsp",
       ]
     }
 
