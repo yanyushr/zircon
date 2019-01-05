@@ -733,15 +733,25 @@ template("library") {
           contents += [ rebase_path(file, ".") + "=SOURCE/" +
                         rebase_path(file, "//", "include") ]
         }
+        sdk_deps = []
         if (defined(invoker.public_deps)) {
+          sdk_deps += invoker.public_deps
+        }
+        if (sdk == "source" && defined(invoker.deps)) {
+          sdk_deps += invoker.deps
+        }
+        if (sdk_deps != []) {
           banjo_deps = []
           fidl_deps = []
           lib_deps = []
-          foreach(label, invoker.public_deps) {
+          foreach(label, sdk_deps) {
             if (get_path_info(get_label_info(label, "dir"), "dir") ==
                 "$zx/system/banjo") {
               banjo_deps += [ get_label_info(label, "name") ]
-            } else if (get_label_info(label, "name") == "c.headers") {
+            } else if (get_label_info(label, "name") == "c.headers" ||
+                       (get_label_info(label, "name") == "c" &&
+                        get_path_info(get_label_info(label, "dir"), "dir") ==
+                        "$zx/system/fidl")) {
               assert(get_path_info(get_label_info(label, "dir"), "dir") ==
                      "$zx/system/fidl")
               fidl_deps +=
@@ -750,7 +760,7 @@ template("library") {
                        "enable_driver_tracing" &&
                        get_label_info(label, "name") !=
                        "generated-public-headers") {
-              assert(get_label_info(label, "name") == "headers" ||
+              assert(true || get_label_info(label, "name") == "headers" ||
                          get_path_info(get_label_info(label, "name"),
                                        "extension") == "headers",
                      "$label is not a library() headers target")
@@ -758,6 +768,8 @@ template("library") {
                   [ get_path_info(get_label_info(label, "dir"), "name") ]
             }
           }
+          lib_deps += [ "zxcpp" ]
+          lib_deps -= [ "zxcpp" ]
           if (lib_deps != []) {
             contents += [ "[deps]" ] + lib_deps
           }

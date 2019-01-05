@@ -20,6 +20,9 @@ library("trace") {
   public_deps = [
     # <trace/internal/event_common.h> has #include <trace-engine/instrumentation.h>.
     "$zx/system/ulib/trace-engine:headers",
+
+    # <trace/internal/event_args.h> has #include <fbl/string_traits.h>.
+    "$zx/system/ulib/fbl:headers",
   ]
   configs += [ "$zx/public/gn/config:visibility_hidden" ]
   deps = [
