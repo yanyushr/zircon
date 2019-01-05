@@ -4,6 +4,7 @@
 
 library("fake-bti") {
   sdk = "shared"
+  sdk_headers = [ "lib/fake-bti/bti.h" ]
   testonly = true
   shared = true
   sources = [

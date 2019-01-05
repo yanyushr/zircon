@@ -6,6 +6,7 @@
 
 library("explicit-memory") {
   sdk = "static"
+  sdk_headers = [ "explicit-memory/bytes.h" ]
   kernel = true
   static = true
   sources = [

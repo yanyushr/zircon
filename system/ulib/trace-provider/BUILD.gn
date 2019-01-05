@@ -4,6 +4,11 @@
 
 library("trace-provider") {
   sdk = "static"
+  sdk_headers = [
+    "trace-provider/fdio_connect.h",
+    "trace-provider/handler.h",
+    "trace-provider/provider.h",
+  ]
   sources = [
     "fdio_connect.cpp",
     "provider_impl.cpp",
@@ -35,6 +40,7 @@ library("trace-provider") {
 # Normal apps are not expected to use this.
 library("trace-handler") {
   sdk = "static"
+  sdk_headers = []
   sources = [
     "handler.cpp",
   ]

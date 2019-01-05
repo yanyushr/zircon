@@ -4,6 +4,7 @@
 
 library("unittest") {
   sdk = "source"
+  sdk_headers = [ "unittest/unittest.h" ]
   testonly = true
   host = true
   shared = true

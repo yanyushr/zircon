@@ -4,6 +4,14 @@
 
 library("ddktl") {
   sdk = "static"
+  sdk_headers = [
+    "ddktl/protocol/empty-protocol.h",
+    "ddktl/device-internal.h",
+    "ddktl/device.h",
+    "ddktl/i2c-channel.h",
+    "ddktl/mmio.h",
+    "ddktl/pdev.h",
+  ]
   sources = [
     "pdev.cpp",
   ]

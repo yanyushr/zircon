@@ -4,6 +4,10 @@
 
 library("zxs") {
   sdk = "static"
+  sdk_headers = [
+    "lib/zxs/protocol.h",
+    "lib/zxs/zxs.h",
+  ]
   sources = [
     "zxs.cpp",
   ]

@@ -4,6 +4,17 @@
 
 library("cobalt-client") {
   sdk = "source"
+  sdk_headers = [
+    "cobalt-client/cpp/collector-internal.h",
+    "cobalt-client/cpp/collector.h",
+    "cobalt-client/cpp/counter-internal.h",
+    "cobalt-client/cpp/counter.h",
+    "cobalt-client/cpp/histogram-internal.h",
+    "cobalt-client/cpp/histogram.h",
+    "cobalt-client/cpp/metric-options.h",
+    "cobalt-client/cpp/timer.h",
+    "cobalt-client/cpp/types-internal.h",
+  ]
   host = true
   sources = [
     "collector.cpp",

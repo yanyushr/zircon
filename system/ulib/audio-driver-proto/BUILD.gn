@@ -4,6 +4,7 @@
 
 library("audio-driver-proto") {
   sdk = "source"
+  sdk_headers = [ "audio-proto/audio-proto.h" ]
   sources = [
     "audio-proto.cpp",
   ]

@@ -4,6 +4,11 @@
 
 library("perftest") {
   sdk = "source"
+  sdk_headers = [
+    "perftest/perftest.h",
+    "perftest/results.h",
+    "perftest/runner.h",
+  ]
   testonly = true
   sources = [
     "results.cpp",

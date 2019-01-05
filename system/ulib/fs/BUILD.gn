@@ -4,6 +4,31 @@
 
 library("fs") {
   sdk = "source"
+  sdk_headers = [
+    "fs/block-txn.h",
+    "fs/client.h",
+    "fs/connection.h",
+    "fs/fvm.h",
+    "fs/handler.h",
+    "fs/lazy-dir.h",
+    "fs/locking.h",
+    "fs/managed-vfs.h",
+    "fs/metrics.h",
+    "fs/pseudo-dir.h",
+    "fs/pseudo-file.h",
+    "fs/queue.h",
+    "fs/ref_counted.h",
+    "fs/remote-dir.h",
+    "fs/remote.h",
+    "fs/service.h",
+    "fs/synchronous-vfs.h",
+    "fs/ticker.h",
+    "fs/trace.h",
+    "fs/vfs.h",
+    "fs/vmo-file.h",
+    "fs/vnode.h",
+    "fs/watcher.h",
+  ]
   host = true
   static = true
 

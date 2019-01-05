@@ -4,6 +4,12 @@
 
 library("fs-management") {
   sdk = "shared"
+  sdk_headers = [
+    "fs-management/fvm.h",
+    "fs-management/mount.h",
+    "fs-management/ram-nand.h",
+    "fs-management/ramdisk.h",
+  ]
   shared = true
   sources = [
     "fsck.cpp",

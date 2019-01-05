@@ -6,6 +6,10 @@
 
 library("pretty") {
   sdk = "static"
+  sdk_headers = [
+    "pretty/hexdump.h",
+    "pretty/sizes.h",
+  ]
   kernel = true
   host = true
   static = true

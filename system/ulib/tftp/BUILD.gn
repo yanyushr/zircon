@@ -4,6 +4,7 @@
 
 library("tftp") {
   sdk = "static"
+  sdk_headers = [ "tftp/tftp.h" ]
   kernel = true
   host = true
   static = true

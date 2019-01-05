@@ -4,6 +4,7 @@
 
 library("hisi-lib") {
   sdk = "static"
+  sdk_headers = [ "dev/clk/hisi-lib/hisi.h" ]
   sources = [
     "hisi-clk.c",
   ]

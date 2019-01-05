@@ -4,5 +4,6 @@
 
 library("broadcom") {
   sdk = "source"
+  sdk_headers = [ "wifi/wifi-config.h" ]
   sources = []
 }

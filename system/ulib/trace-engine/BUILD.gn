@@ -4,6 +4,14 @@
 
 library("trace-engine") {
   sdk = "shared"
+  sdk_headers = [
+    "trace-engine/buffer_internal.h",
+    "trace-engine/context.h",
+    "trace-engine/fields.h",
+    "trace-engine/handler.h",
+    "trace-engine/instrumentation.h",
+    "trace-engine/types.h",
+  ]
   shared = true
   sources = [
     "context.cpp",
@@ -12,6 +20,7 @@ library("trace-engine") {
     "nonce.cpp",
   ]
   configs += [ "$zx/public/gn/config:visibility_hidden" ]
+
   # TODO: defines = [ "DDK_TRACING" ]
   deps = [
     "$zx/system/ulib/async",

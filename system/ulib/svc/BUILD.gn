@@ -4,6 +4,10 @@
 
 library("svc") {
   sdk = "source"
+  sdk_headers = [
+    "lib/svc/outgoing.h",
+    "lib/svc/service.h",
+  ]
   sources = [
     "outgoing.cpp",
   ]

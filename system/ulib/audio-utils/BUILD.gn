@@ -4,6 +4,12 @@
 
 library("audio-utils") {
   sdk = "source"
+  sdk_headers = [
+    "audio-utils/audio-device-stream.h",
+    "audio-utils/audio-input.h",
+    "audio-utils/audio-output.h",
+    "audio-utils/audio-stream.h",
+  ]
   sources = [
     "audio-device-stream.cpp",
     "audio-input.cpp",

@@ -6,6 +6,20 @@
 
 library("lockdep") {
   sdk = "source"
+  sdk_headers = [
+    "lockdep/common.h",
+    "lockdep/global_reference.h",
+    "lockdep/guard.h",
+    "lockdep/guard_multiple.h",
+    "lockdep/lock_class.h",
+    "lockdep/lock_class_state.h",
+    "lockdep/lock_dependency_set.h",
+    "lockdep/lock_policy.h",
+    "lockdep/lock_traits.h",
+    "lockdep/lockdep.h",
+    "lockdep/runtime_api.h",
+    "lockdep/thread_lock_state.h",
+  ]
   kernel = true
   static = true
   sources = [

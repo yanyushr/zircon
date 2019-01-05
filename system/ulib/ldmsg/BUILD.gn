@@ -4,6 +4,7 @@
 
 library("ldmsg") {
   sdk = "static"
+  sdk_headers = [ "ldmsg/ldmsg.h" ]
   sources = [
     "ldmsg.c",
   ]

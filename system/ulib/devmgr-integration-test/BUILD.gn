@@ -4,6 +4,8 @@
 
 library("devmgr-integration-test") {
   sdk = "shared"
+  sdk_headers = [ "lib/devmgr-integration-test/fixture.h" ]
+
   # TODO: testonly = true
   shared = true
   sources = [

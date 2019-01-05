@@ -4,6 +4,15 @@
 
 library("dispatcher-pool") {
   sdk = "source"
+  sdk_headers = [
+    "dispatcher-pool/dispatcher-channel.h",
+    "dispatcher-pool/dispatcher-event-source.h",
+    "dispatcher-pool/dispatcher-execution-domain.h",
+    "dispatcher-pool/dispatcher-interrupt.h",
+    "dispatcher-pool/dispatcher-thread-pool.h",
+    "dispatcher-pool/dispatcher-timer.h",
+    "dispatcher-pool/dispatcher-wakeup-event.h",
+  ]
   sources = [
     "dispatcher-channel.cpp",
     "dispatcher-event-source.cpp",

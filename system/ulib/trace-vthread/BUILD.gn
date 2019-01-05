@@ -4,6 +4,10 @@
 
 library("trace-vthread") {
   sdk = "static"
+  sdk_headers = [
+    "trace-vthread/internal/event_vthread.h",
+    "trace-vthread/event_vthread.h",
+  ]
   sources = [
     "event_vthread.cpp",
   ]

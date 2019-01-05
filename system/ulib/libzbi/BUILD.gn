@@ -6,6 +6,12 @@
 
 library("libzbi") {
   sdk = "static"
+  sdk_headers = [
+    "libzbi/zbi-cpp.h",
+    "libzbi/zbi-split.h",
+    "libzbi/zbi-zx.h",
+    "libzbi/zbi.h",
+  ]
   host = true
   kernel = true
   static = true

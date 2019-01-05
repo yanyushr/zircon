@@ -4,6 +4,10 @@
 
 library("usb") {
   sdk = "source"
+  sdk_headers = [
+    "usb/usb-request.h",
+    "usb/usb.h",
+  ]
   sources = [
     "usb-request.c",
     "usb.c",

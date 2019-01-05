@@ -382,13 +382,16 @@ template("library") {
   }
   if (defined(invoker.sdk)) {
     sdk = invoker.sdk
+    sdk_headers = invoker.sdk_headers
   } else {
     sdk = false
+    sdk_headers = []
   }
   _library_params = [
     "kernel",
     "host",
     "sdk",
+    "sdk_headers",
     "shared",
     "static",
   ]
@@ -724,6 +727,11 @@ template("library") {
                     rebase_path("$target_out_dir/$soname", root_build_dir) ]
             }
           }
+        }
+        contents += [ "[includes]" ]
+        foreach(file, invoker.sdk_headers) {
+          contents += [ rebase_path(file, ".") + "=SOURCE/" +
+                        rebase_path(file, "//", "include") ]
         }
         if (defined(invoker.public_deps)) {
           banjo_deps = []

@@ -4,6 +4,11 @@
 
 library("trace-test-utils") {
   sdk = "source"
+  sdk_headers = [
+    "trace-test-utils/compare_records.h",
+    "trace-test-utils/read_records.h",
+    "trace-test-utils/squelch.h",
+  ]
   testonly = true
   sources = [
     "compare_records.cpp",

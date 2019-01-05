@@ -6,7 +6,6 @@
 
 if (is_kernel) {  # TODO(mcgrathr): just move the code into the kernel proper
   library("zxcpp") {
-    sdk = "source"
     kernel = true
     sources = [
       "new.cpp",

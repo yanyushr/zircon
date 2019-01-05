@@ -4,6 +4,7 @@
 
 library("c") {
   sdk = "shared"
+  sdk_headers = [] # TODO
   shared = true
   static = false
 

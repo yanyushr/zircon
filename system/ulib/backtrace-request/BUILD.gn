@@ -4,5 +4,6 @@
 
 library("backtrace-request") {
   sdk = "source"
+  sdk_headers = [ "lib/backtrace-request/backtrace-request.h" ]
   sources = []
 }

@@ -4,6 +4,7 @@
 
 library("loader-service") {
   sdk = "static"
+  sdk_headers = [ "loader-service/loader-service.h" ]
   sources = [
     "loader-service.c",
   ]

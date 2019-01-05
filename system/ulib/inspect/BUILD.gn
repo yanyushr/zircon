@@ -4,6 +4,13 @@
 
 library("inspect") {
   sdk = "source"
+  sdk_headers = [
+    "lib/inspect/block.h",
+    "lib/inspect/heap.h",
+    "lib/inspect/limits.h",
+    "lib/inspect/scanner.h",
+    "lib/inspect/snapshot.h",
+  ]
   sources = [
     "heap.cpp",
     "scanner.cpp",

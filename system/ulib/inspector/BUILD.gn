@@ -4,6 +4,7 @@
 
 library("inspector") {
   sdk = "static"
+  sdk_headers = [ "inspector/inspector.h" ]
   sources = [
     "backtrace.cpp",
     "debug-info.cpp",

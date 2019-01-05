@@ -4,6 +4,26 @@
 
 library("fit") {
   sdk = "source"
+  sdk_headers = [
+    "lib/fit/bridge.h",
+    "lib/fit/bridge_internal.h",
+    "lib/fit/defer.h",
+    "lib/fit/function.h",
+    "lib/fit/function_internal.h",
+    "lib/fit/function_traits.h",
+    "lib/fit/nullable.h",
+    "lib/fit/optional.h",
+    "lib/fit/promise.h",
+    "lib/fit/promise_internal.h",
+    "lib/fit/result.h",
+    "lib/fit/scheduler.h",
+    "lib/fit/scope.h",
+    "lib/fit/sequencer.h",
+    "lib/fit/single_threaded_executor.h",
+    "lib/fit/thread_safety.h",
+    "lib/fit/traits.h",
+    "lib/fit/variant.h",
+  ]
   host = true
   static = true
   configs += [ "$zx/public/gn/config:visibility_hidden" ]

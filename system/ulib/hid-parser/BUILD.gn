@@ -4,6 +4,11 @@
 
 library("hid-parser") {
   sdk = "static"
+  sdk_headers = [
+    "hid-parser/item.h",
+    "hid-parser/parser.h",
+    "hid-parser/usages.h",
+  ]
   sources = [
     "item.cpp",
     "parser.cpp",

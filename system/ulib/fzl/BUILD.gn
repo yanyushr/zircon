@@ -4,6 +4,18 @@
 
 library("fzl") {
   sdk = "source"
+  sdk_headers = [
+    "lib/fzl/fdio.h",
+    "lib/fzl/fifo.h",
+    "lib/fzl/memory-probe.h",
+    "lib/fzl/owned-vmo-mapper.h",
+    "lib/fzl/pinned-vmo.h",
+    "lib/fzl/resizeable-vmo-mapper.h",
+    "lib/fzl/time.h",
+    "lib/fzl/vmar-manager.h",
+    "lib/fzl/vmo-mapper.h",
+    "lib/fzl/vmo-pool.h",
+  ]
   sources = [
     "memory-probe.cpp",
     "owned-vmo-mapper.cpp",

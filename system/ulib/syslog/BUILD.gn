@@ -4,6 +4,11 @@
 
 library("syslog") {
   sdk = "shared"
+  sdk_headers = [
+    "lib/syslog/global.h",
+    "lib/syslog/logger.h",
+    "lib/syslog/wire_format.h",
+  ]
   shared = true
   sources = [
     "fx_logger.cpp",

@@ -6,6 +6,31 @@ import("$zx/public/gn/config/levels.gni")
 
 library("ngunwind") {
   sdk = "shared"
+  sdk_headers = [
+    "ngunwind/private/compiler.h",
+    "ngunwind/private/config.h",
+    "ngunwind/private/dwarf-config.h",
+    "ngunwind/private/dwarf_i.h",
+    "ngunwind/private/elf32.h",
+    "ngunwind/private/elf64.h",
+    "ngunwind/private/elfxx.h",
+    "ngunwind/private/fuchsia_i.h",
+    "ngunwind/private/libunwind-common.h",
+    "ngunwind/private/libunwind-dynamic.h",
+    "ngunwind/private/libunwind_i.h",
+    "ngunwind/private/mempool.h",
+    "ngunwind/private/remote.h",
+    "ngunwind/private/tgt-aarch64.h",
+    "ngunwind/private/tgt-arm.h",
+    "ngunwind/private/tgt-x86_64.h",
+    "ngunwind/private/tgt_i-aarch64.h",
+    "ngunwind/private/tgt_i-arm.h",
+    "ngunwind/private/tgt_i-x86_64.h",
+    "ngunwind/dwarf-eh.h",
+    "ngunwind/dwarf.h",
+    "ngunwind/fuchsia.h",
+    "ngunwind/libunwind.h",
+  ]
   shared = true
   configs += [ ":private_config" ]
   deps = [

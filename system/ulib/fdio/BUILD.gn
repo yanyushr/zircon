@@ -6,6 +6,18 @@
 
 library("fdio") {
   sdk = "shared"
+  sdk_headers = [
+    "lib/fdio/debug.h",
+    "lib/fdio/io.h",
+    "lib/fdio/limits.h",
+    "lib/fdio/namespace.h",
+    "lib/fdio/private.h",
+    "lib/fdio/spawn.h",
+    "lib/fdio/unsafe.h",
+    "lib/fdio/util.h",
+    "lib/fdio/vfs.h",
+    "lib/fdio/watcher.h",
+  ]
   shared = true
   sources = [
     "bsdsocket.c",

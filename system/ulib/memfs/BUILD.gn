@@ -10,6 +10,7 @@
 # can be plugged into ulib/fs.
 library("memfs-cpp") {
   sdk = "source"
+  sdk_headers = [ "lib/memfs/cpp/vnode.h" ]
   sources = [
     "directory.cpp",
     "dnode.cpp",
@@ -37,6 +38,7 @@ library("memfs-cpp") {
 # Used to create local temporary filesystems.
 library("memfs") {
   sdk = "shared"
+  sdk_headers = [ "lib/memfs/memfs.h" ]
   shared = true
   sources = [
     "memfs-local.cpp",

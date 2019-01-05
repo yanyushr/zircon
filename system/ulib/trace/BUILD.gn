@@ -4,6 +4,15 @@
 
 library("trace") {
   sdk = "static"
+  sdk_headers = [
+    "trace/internal/event_args.h",
+    "trace/internal/event_common.h",
+    "trace/internal/event_internal.h",
+    "trace/internal/pairs_internal.h",
+    "trace/event.h",
+    "trace/event_args.h",
+    "trace/observer.h",
+  ]
   sources = [
     "event.cpp",
     "observer.cpp",

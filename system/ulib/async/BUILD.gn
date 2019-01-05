@@ -4,6 +4,19 @@
 
 library("async") {
   sdk = "source"
+  sdk_headers = []
+  foreach(file,
+          [
+            "dispatcher.h",
+            "exception.h",
+            "receiver.h",
+            "task.h",
+            "time.h",
+            "trap.h",
+            "wait.h",
+          ]) {
+    sdk_headers += [ "lib/async/$file" ]
+  }
   sources = [
     "ops.c",
   ]
@@ -15,6 +28,18 @@ library("async") {
 
 library("async-cpp") {
   sdk = "source"
+  sdk_headers = []
+  foreach(file,
+          [
+            "cpp/exception.h",
+            "cpp/receiver.h",
+            "cpp/task.h",
+            "cpp/time.h",
+            "cpp/trap.h",
+            "cpp/wait.h",
+          ]) {
+    sdk_headers += [ "lib/async/$file" ]
+  }
   sources = [
     "exception.cpp",
     "receiver.cpp",
@@ -33,6 +58,7 @@ library("async-cpp") {
 
 library("async-default") {
   sdk = "shared"
+  sdk_headers = [ "lib/async/default.h" ]
   shared = true
   sources = [
     "default.c",
