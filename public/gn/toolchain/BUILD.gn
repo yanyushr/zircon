@@ -14,6 +14,9 @@ assert(current_toolchain == default_toolchain,
 # used for action and copy rules.
 define_toolchain("stub") {
   tools = []
+
+  # This is needed for $zx/public/gn/banjo.gni et al.
+  propagates_configs = true
 }
 
 # This defines user and host toolchains.
