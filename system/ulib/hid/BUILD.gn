@@ -24,6 +24,7 @@ library("hid") {
   sources = [
     "acer12.c",
     "ambient-light.c",
+    "bma253.c",
     "buttons.c",
     "egalax.c",
     "eyoyo.c",

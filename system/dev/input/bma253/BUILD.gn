@@ -2,10 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-driver("lite-on") {
+driver("bma253") {
   sources = [
-    "binding.c",
-    "ltr-578als.cpp",
+    "bma253.cpp",
   ]
   deps = [
     "$zx/system/banjo/ddk-protocol-clk",
