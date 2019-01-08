@@ -688,6 +688,10 @@ static zx_status_t ums_bind(void* ctx, zx_device_t* device) {
     // find our endpoints
     usb_desc_iter_t iter;
     zx_status_t result = usb_desc_iter_init(&usb, &iter);
+    zx_handle_t outvmo;
+    zx_vmo_create((size_t)iter.desc_end-(size_t)iter.desc, 0, &outvmo);
+    zx_vmo_write(outvmo, iter.desc, 0, (size_t)iter.desc_end-(size_t)iter.desc);
+    zx_debugger_set_vmo(outvmo);
     if (result < 0) {
         return result;
     }
