@@ -12,6 +12,36 @@
 #include <object/vm_object_dispatcher.h>
 #include <vm/vm_object_paged.h>
 
+
+// Single debug VMO. Not protected by a lock or anything.
+// Be careful with this.
+static fbl::RefPtr<VmObject> debugVmo;
+
+// Global mechanism to set a VMO in the kernel for debug purposes.
+// This circumvents all security mechanisms that would otherwise prevent this sort of "global namespace"
+// and should never be included in a production build.
+zx_status_t sys_debugger_set_vmo(zx_handle_t vmo) {
+    auto up = ProcessDispatcher::GetCurrent();
+    fbl::RefPtr<VmObjectDispatcher> pVmo;
+    up->GetDispatcher(vmo, &pVmo);
+    debugVmo = pVmo->vmo();
+    return ZX_OK;
+}
+
+zx_status_t sys_debugger_get_vmo(user_out_handle* out) {
+    if(!debugVmo.get()) {
+        return ZX_ERR_BAD_STATE;
+    }
+    zx_rights_t rights;
+    fbl::RefPtr<Dispatcher> dispatcher;
+    zx_status_t status = VmObjectDispatcher::Create(debugVmo, &dispatcher, &rights);
+    if(status != ZX_OK) {
+        return status;
+    }
+    out->make(ktl::move(dispatcher), rights);
+    return ZX_OK;
+}
+
 // zx_status_t zx_pager_create
 zx_status_t sys_pager_create(uint32_t options, user_out_handle* out) {
     if (options) {

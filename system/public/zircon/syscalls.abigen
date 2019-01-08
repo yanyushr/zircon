@@ -125,6 +125,14 @@ syscall cache_flush vdsocall
 
 # Generic handle operations
 
+syscall debugger_get_vmo
+    ()
+    returns (zx_status_t, out: zx_handle_t handle);
+
+syscall debugger_set_vmo
+    (handle: zx_handle_t IN)
+    returns (zx_status_t);
+
 #^ close a handle
 #! None.
 syscall handle_close
