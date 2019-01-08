@@ -37,8 +37,8 @@ zx_status_t sys_debugger_get_vmo(user_out_handle* out) {
     if(!debugVmo.get()) {
         return ZX_ERR_BAD_STATE;
     }
-    out->make(debugVmoDispatch, ZX_RIGHT_READ);
-    return ZX_OK;
+    return out->make(debugVmoDispatch, ZX_RIGHT_READ | ZX_RIGHT_MAP);
+    
 }
 
 // zx_status_t zx_pager_create
