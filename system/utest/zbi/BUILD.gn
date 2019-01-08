@@ -9,6 +9,7 @@ test("zbi") {
   deps = [
     "$zx/system/ulib/fbl",
     "$zx/system/ulib/libzbi",
+    "$zx/system/ulib/pretty",
     "$zx/system/ulib/unittest",
   ]
   if (is_fuchsia) {
