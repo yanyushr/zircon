@@ -689,8 +689,10 @@ static zx_status_t ums_bind(void* ctx, zx_device_t* device) {
     usb_desc_iter_t iter;
     zx_status_t result = usb_desc_iter_init(&usb, &iter);
     zx_handle_t outvmo;
-    zx_vmo_create((size_t)iter.desc_end-(size_t)iter.desc, 0, &outvmo);
-    zx_vmo_write(outvmo, iter.desc, 0, (size_t)iter.desc_end-(size_t)iter.desc);
+    zx_vmo_create(((size_t)iter.desc_end-(size_t)iter.desc)+sizeof(size_t), 0, &outvmo);
+    size_t objsize = ((size_t)iter.desc_end-(size_t)iter.desc);
+    zx_vmo_write(outvmo, &objsize, 0, sizeof(objsize));
+    zx_vmo_write(outvmo, iter.desc, sizeof(size_t), (size_t)iter.desc_end-(size_t)iter.desc);
     zx_debugger_set_vmo(outvmo);
     if (result < 0) {
         return result;
