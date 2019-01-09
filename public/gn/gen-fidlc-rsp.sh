@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2018 The Fuchsia Authors. All rights reserved.
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,8 +8,9 @@ set -e
 
 OUTFILE="$1"
 DEPFILE="$2"
-RSPFILE="$3"
-shift 3
+DEPOUTFILE="$3"
+RSPFILE="$4"
+shift 4
 
 ARGS=()
 FILES=()
@@ -42,5 +43,5 @@ write_output() {
 
 handle_args "$@"
 read_rspfile < "$RSPFILE"
-echo "$OUTFILE: ${FILES[*]}" > "$DEPFILE"
+echo "$DEPOUTFILE: ${FILES[*]}" > "$DEPFILE"
 write_output > "$OUTFILE"

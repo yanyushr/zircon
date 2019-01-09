@@ -144,7 +144,8 @@ template("banjo_library") {
         gen_depfile,
       ]
       script = "$zx/public/gn/gen-fidlc-rsp.sh"
-      args = rebase_path(outputs + sources, root_build_dir) + gen_args
+      args = rebase_path(outputs + [ gen_outputs[0] ] + sources,
+                         root_build_dir) + gen_args
     }
 
     # Finally, the real action runs banjoc with that response file.
