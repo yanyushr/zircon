@@ -7,7 +7,6 @@ driver("amlogic-pcie") {
     "aml-pcie-clk.cpp",
     "aml-pcie-device.cpp",
     "aml-pcie.cpp",
-    "binding.c",
   ]
   deps = [
     "$zx/system/banjo/ddk-protocol-clk",

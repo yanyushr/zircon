@@ -9,16 +9,18 @@ library("topology") {
     "system-topology.cpp",
   ]
   deps = [
+    ":test",
     "$zx/system/ulib/fbl",
   ]
 }
 
-host_test("topology") {
+source_set("test") {
+  # TODO: testonly = true
   sources = [
     "system-topology_test.cpp",
   ]
+  include_dirs = [ "include" ]
   deps = [
-    ":topology",
-    "$zx/system/ulib/unittest",
+    "$zx/kernel/lib/unittest",
   ]
 }

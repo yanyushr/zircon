@@ -29,6 +29,7 @@ library("hid") {
     "egalax.c",
     "eyoyo.c",
     "ft3x27.c",
+    "ft6336.c",
     "gt92xx.c",
     "hid.c",
     "keymaps.c",

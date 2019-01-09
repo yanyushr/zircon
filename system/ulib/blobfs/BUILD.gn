@@ -18,13 +18,13 @@ library("blobfs") {
     sources += [
       "allocator.cpp",
       "blob-cache.cpp",
+      "blob.cpp",
       "blobfs.cpp",
       "cache-node.cpp",
+      "directory.cpp",
       "iterator/node-populator.cpp",
       "journal.cpp",
       "metrics.cpp",
-      "rpc.cpp",
-      "vnode.cpp",
       "writeback.cpp",
     ]
   } else {

@@ -28,6 +28,7 @@ executable("devmgr") {
     "$zx/system/ulib/fit",
     "$zx/system/ulib/fs",
     "$zx/system/ulib/launchpad",
+    "$zx/system/ulib/libzbi",
     "$zx/system/ulib/loader-service",
     "$zx/system/ulib/memfs",
     "$zx/system/ulib/sync",

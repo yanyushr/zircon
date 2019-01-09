@@ -12,6 +12,7 @@ library("hid-parser") {
   sources = [
     "item.cpp",
     "parser.cpp",
+    "report.cpp",
   ]
   configs += [ "$zx/public/gn/config:visibility_hidden" ]
   deps = [

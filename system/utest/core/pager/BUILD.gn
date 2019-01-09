@@ -2,21 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-library("simplehid") {
-  sources = []
-  public_deps = [
-    # <lib/simplehid/simplehid.h> has #include <ddktl/protocol/hidbus.h>.
-    "$zx/system/banjo/ddk-protocol-hidbus",
+test("pager") {
+  test_group = "core"
+  sources = [
+    "pager.cpp",
+    "test_thread.cpp",
+    "userpager.cpp",
   ]
   deps = [
-    "$zx/system/ulib/ddk",
-    "$zx/system/ulib/ddktl",
-    "$zx/system/ulib/driver",
+    "$zx/system/ulib/elf-search",
     "$zx/system/ulib/fbl",
-    "$zx/system/ulib/fit",
+    "$zx/system/ulib/fdio",
+    "$zx/system/ulib/inspector",
     "$zx/system/ulib/sync",
+    "$zx/system/ulib/unittest",
     "$zx/system/ulib/zircon",
     "$zx/system/ulib/zx",
     "$zx/system/ulib/zxcpp",
+    "$zx/third_party/ulib/backtrace",
+    "$zx/third_party/ulib/ngunwind",
   ]
 }
