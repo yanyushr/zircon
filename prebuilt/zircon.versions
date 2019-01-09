@@ -5,10 +5,6 @@ fuchsia/clang/linux-amd64
 	git_revision:fdfe4498af7bab15cc7716a6110f60f280bc415b
 	gxqulZU837Lj_Zc8tC9te-IWOCqAYYzQSVzHLxDfl6oC
 
-fuchsia/clang/linux-arm64
-	git_revision:fdfe4498af7bab15cc7716a6110f60f280bc415b
-	FeISGNSZykmoWhjx0-n7-2lTxstBBVzlH3HOPd6gOLoC
-
 fuchsia/clang/mac-amd64
 	git_revision:fdfe4498af7bab15cc7716a6110f60f280bc415b
 	Vz9IRJoiptCDnRddGuvgigCFp4RslfQ7EXzwOPuFSpcC
@@ -25,10 +21,6 @@ fuchsia/qemu/linux-amd64
 	git_revision:0f0027d617976b4cbb7b937d5836f8ef0ac25ba1
 	9cc486c5b18a0be515c39a280ca9a309c54cf994
 
-fuchsia/qemu/linux-arm64
-	git_revision:0f0027d617976b4cbb7b937d5836f8ef0ac25ba1
-	b1b61a39e3ab0935cd030f27e01740578b04b967
-
 fuchsia/qemu/mac-amd64
 	git_revision:0f0027d617976b4cbb7b937d5836f8ef0ac25ba1
 	2d3358ae9a569b2d4a474f498b32b202a152134f
@@ -37,17 +29,9 @@ fuchsia/sysroot/linux-amd64
 	git_revision:a96053c799a0f1ad0b7e8ab8199edbfa18adcbb6
 	ae0677829357edb199c21e76b1ea31eb8ef62817
 
-fuchsia/sysroot/linux-arm64
-	git_revision:a96053c799a0f1ad0b7e8ab8199edbfa18adcbb6
-	f116a841ddf6d1755bde918b8f07763bdee5e06d
-
 fuchsia/tools/symbolize/linux-amd64
 	git_revision:7140d924a314402c36bae66f34d0e77587ffb825
 	SwHX3C5v2LnsRsgyeDIWzYFqEtZuCDMEZLMijVEq-LYC
-
-fuchsia/tools/symbolize/linux-arm64
-	git_revision:7140d924a314402c36bae66f34d0e77587ffb825
-	Exa4kWl84z96Z6I-8_Gextd6SFCh24YK5KE-zxVSVg0C
 
 fuchsia/tools/symbolize/mac-amd64
 	git_revision:7140d924a314402c36bae66f34d0e77587ffb825
@@ -60,3 +44,19 @@ fuchsia_internal/firmware/bluetooth/bcm4345c4
 fuchsia_internal/firmware/intel-adsp-sst
 	git_revision:8fc2d4e55685bf73b6f7752383da9067404a74bb
 	9d21c0035e6212f8ae944166f600e44a3f0cc35d
+
+gn/gn/linux-amd64
+	git_revision:45314e29d54cc2e4a6501eaec860f1b09740eb9c
+	a3Mx_U5jJsvp0XNS7lfQI0cDSib4XjFkIajzZqGTzg8C
+
+gn/gn/mac-amd64
+	git_revision:45314e29d54cc2e4a6501eaec860f1b09740eb9c
+	F5CLo3CVLBz-MUaRzrIbJJiXp2nLEqeaCb3cPluZ88AC
+
+infra/ninja/linux-amd64
+	version:1.8.2
+	74ac124bfbbaabf1fd700cc821fd604effbdd918
+
+infra/ninja/mac-amd64
+	version:1.8.2
+	04d426fab9a5bd493dc03ce7274c30c4148a1cbe

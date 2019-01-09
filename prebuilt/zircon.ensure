@@ -19,7 +19,8 @@ $ParanoidMode CheckPresence
 
 # This tells CIPD to complain if ${...} references can't cover all of these.
 $VerifiedPlatform linux-amd64
-$VerifiedPlatform linux-arm64
+# TODO(mcgrathr): gn/ninja missing for arm
+#$VerifiedPlatform linux-arm64
 $VerifiedPlatform mac-amd64
 
 # Clang
@@ -41,3 +42,11 @@ fuchsia/tools/symbolize/${platform} git_revision:7140d924a314402c36bae66f34d0e77
 # QEMU
 @Subdir qemu
 fuchsia/qemu/${platform} git_revision:0f0027d617976b4cbb7b937d5836f8ef0ac25ba1
+
+# GN
+@Subdir
+gn/gn/${platform} git_revision:45314e29d54cc2e4a6501eaec860f1b09740eb9c
+
+# Ninja
+@Subdir
+infra/ninja/${platform} version:1.8.2
