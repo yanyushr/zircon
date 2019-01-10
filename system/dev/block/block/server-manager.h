@@ -13,6 +13,7 @@
 #include <lib/zx/vmo.h>
 #include <zircon/types.h>
 
+#include "io-queue.h"
 #include "server.h"
 
 // ServerManager controls the state of a background thread (or threads) servicing Fifo
@@ -77,5 +78,6 @@ private:
 
     thrd_t thread_;
     std::atomic<uint32_t> state_;
-    BlockServer* server_ = nullptr;
+    fbl::unique_ptr<BlockServer> server_ = nullptr;
+    fbl::unique_ptr<ioqueue::Queue> queue_ = nullptr;
 };

@@ -27,6 +27,7 @@
 #include <zircon/thread_annotations.h>
 #include <zircon/types.h>
 
+#include "io-queue.h"
 #include "txn-group.h"
 
 // Represents the mapping of "vmoid --> VMO"
@@ -149,11 +150,12 @@ public:
     static zx_status_t Create(
         ddk::BlockProtocolClient* bp,
         fzl::fifo<block_fifo_request_t, block_fifo_response_t>* fifo_out,
-        BlockServer** out);
+        fbl::unique_ptr<BlockServer>* out);
 
     // Starts the BlockServer using the current thread
     zx_status_t Serve() TA_EXCL(server_lock_);
     zx_status_t AttachVmo(zx::vmo vmo, vmoid_t* out) TA_EXCL(server_lock_);
+    const ioqueue::QueueOps* GetOps() { return &ops_; }
 
     // Updates the total number of pending txns, possibly signals
     // the queue-draining thread to wake up if they are waiting
@@ -215,4 +217,8 @@ private:
     fbl::Mutex server_lock_;
     fbl::WAVLTree<vmoid_t, fbl::RefPtr<IoBuffer>> tree_ TA_GUARDED(server_lock_);
     vmoid_t last_id_ TA_GUARDED(server_lock_);
+
+    const ioqueue::QueueOps ops_ = {
+        .context = this,
+    };
 };

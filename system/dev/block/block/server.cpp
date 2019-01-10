@@ -263,37 +263,37 @@ void BlockServer::InQueueDrainer() {
 }
 
 zx_status_t BlockServer::Create(ddk::BlockProtocolClient* bp, fzl::fifo<block_fifo_request_t,
-                                block_fifo_response_t>* fifo_out, BlockServer** out) {
+                                block_fifo_response_t>* fifo_out,
+                                fbl::unique_ptr<BlockServer>* out) {
     fbl::AllocChecker ac;
     BlockServer* bs = new (&ac) BlockServer(bp);
     if (!ac.check()) {
         return ZX_ERR_NO_MEMORY;
     }
+    fbl::unique_ptr<BlockServer> server(bs);
 
     zx_status_t status;
-    if ((status = fzl::create_fifo(BLOCK_FIFO_MAX_DEPTH, 0, fifo_out, &bs->fifo_)) != ZX_OK) {
-        delete bs;
+    if ((status = fzl::create_fifo(BLOCK_FIFO_MAX_DEPTH, 0, fifo_out, &server->fifo_)) != ZX_OK) {
         return status;
     }
 
-    for (size_t i = 0; i < fbl::count_of(bs->groups_); i++) {
-        bs->groups_[i].Initialize(bs->fifo_.get_handle(), static_cast<groupid_t>(i));
+    for (size_t i = 0; i < fbl::count_of(server->groups_); i++) {
+        server->groups_[i].Initialize(server->fifo_.get_handle(), static_cast<groupid_t>(i));
     }
 
-    // Notably, drop ZX_RIGHT_SIGNAL_PEER, since we use bs->fifo for thread
+    // Notably, drop ZX_RIGHT_SIGNAL_PEER, since we use server->fifo for thread
     // signalling internally within the block server.
     zx_rights_t rights = ZX_RIGHT_TRANSFER | ZX_RIGHT_READ | ZX_RIGHT_WRITE |
             ZX_RIGHT_SIGNAL | ZX_RIGHT_WAIT;
     if ((status = fifo_out->replace(rights, fifo_out)) != ZX_OK) {
-        delete bs;
         return status;
     }
 
-    bp->Query(&bs->info_, &bs->block_op_size_);
+    bp->Query(&server->info_, &server->block_op_size_);
 
     // TODO(ZX-1583): Allocate BlockMsg arena based on block_op_size_.
 
-    *out = bs;
+    *out = std::move(server);
     return ZX_OK;
 }
 
