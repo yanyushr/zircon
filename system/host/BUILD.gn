@@ -9,9 +9,14 @@ group("tools") {
   testonly = true
   deps = [
     "$zx/third_party/uapp/mkfs-msdosfs",
+    "banjo",
     "bootserver",
+    "fidl:tools",
     "kernel-buildsig",
     "loglistener",
+    "merkleroot",
     "netprotocol",
+    "xdc-server",
+    "zbi",
   ]
 }
