@@ -9,7 +9,9 @@ group("tools") {
   testonly = true
   deps = [
     "$zx/third_party/uapp/mkfs-msdosfs",
+    "bootserver",
     "kernel-buildsig",
     "loglistener",
+    "netprotocol",
   ]
 }
