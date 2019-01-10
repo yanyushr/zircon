@@ -123,33 +123,47 @@ zx_status_t UsbVirtualBus::Init() {
 int UsbVirtualBus::Thread() {
     while (1) {
         virt_usb_req_internal_t* req_int;
+        list_node_t completed = LIST_INITIAL_VALUE(completed);
 
         sync_completion_wait(&completion_, ZX_TIME_INFINITE);
         sync_completion_reset(&completion_);
 
-        fbl::AutoLock lock(&lock_);
+printf("thread acquire\n");
+        lock_.Acquire();
+
         if (unbinding_) {
+printf("unbinding_\n");
             for (unsigned i = 0; i < USB_MAX_EPS; i++) {
                 usb_virtual_ep_t* ep = &eps_[i];
 
-                while ((req_int = list_peek_head_type(&ep->host_reqs, virt_usb_req_internal_t, node))
+                while ((req_int = list_remove_head_type(&ep->host_reqs, virt_usb_req_internal_t, node))
                         != nullptr) {
-                    usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);                       
-                    usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, &req_int->complete_cb);
+                    list_add_tail(&completed, &req_int->node);
                 }
-                while ((req_int = list_peek_head_type(&ep->device_reqs, virt_usb_req_internal_t, node))
+                while ((req_int = list_remove_head_type(&ep->device_reqs, virt_usb_req_internal_t, node))
                         != nullptr) {
-                    usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);                       
-                    usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, &req_int->complete_cb);
+                    list_add_tail(&completed, &req_int->node);
                 }
             }
+
+printf("thread release 1\n");
+            lock_.Release();
+
+            while ((req_int = list_remove_head_type(&completed, virt_usb_req_internal_t, node))
+                    != nullptr) {
+                usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);               
+                usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, &req_int->complete_cb);
+            }
+            
             return 0;
         }
 
         // special case endpoint zero
         while ((req_int = list_remove_head_type(&eps_[0].host_reqs, virt_usb_req_internal_t, node))
                 != nullptr) {
+            lock_.Release();
             HandleControl(INTERNAL_TO_USB_REQ(req_int));
+            lock_.Acquire();
         }
 
         for (unsigned i = 1; i < USB_MAX_EPS; i++) {
@@ -178,7 +192,10 @@ int UsbVirtualBus::Thread() {
                     } else {
                         usb_request_copy_to(req, device_buffer, length, offset);
                     }
-                    usb_request_complete(device_req, ZX_OK, length, &device_req_int->complete_cb);
+
+                    device_req->response.status = ZX_OK;
+                    device_req->response.actual = length;
+                    list_add_tail(&completed, &device_req_int->node);
 
                     offset += length;
                     if (offset < req->header.length) {
@@ -186,13 +203,25 @@ int UsbVirtualBus::Thread() {
                     } else {
                         list_delete(&req_int->node);
                         usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);
-                        usb_request_complete(req, ZX_OK, length, &req_int->complete_cb);
+                        req->response.status = ZX_OK;
+                        req->response.actual = length;
+                        list_add_tail(&completed, &req_int->node);
                         ep->req_offset = 0;
                     }
                 } else {
                     break;
                 }
             }
+        }
+
+printf("thread release 2\n");
+        lock_.Release();
+
+        while ((req_int = list_remove_head_type(&completed, virt_usb_req_internal_t, node))
+                != nullptr) {
+            usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);               
+            usb_request_complete(req, req->response.status, req->response.actual,
+                                 &req_int->complete_cb);
         }
     }
     return 0;
@@ -226,6 +255,32 @@ void UsbVirtualBus::HandleControl(usb_request_t* req) {
 
     auto* req_int = USB_REQ_TO_INTERNAL(req);
     usb_request_complete(req, status, actual, &req_int->complete_cb);
+}
+
+void UsbVirtualBus::SetConnected(bool connected) {
+    lock_.Acquire();
+    bool was_connected = connected_;
+    connected_ = connected;
+    lock_.Release();
+
+    if (connected && !was_connected) {
+        if (bus_intf_.has_value()) {
+            bus_intf_->AddDevice(CLIENT_SLOT_ID, CLIENT_HUB_ID, CLIENT_SPEED);
+        }
+        if (dci_intf_.has_value()) {
+            dci_intf_->SetConnected(true);
+        }
+    } else if (!connected && was_connected) {
+        if (bus_intf_.has_value()) {
+            bus_intf_->RemoveDevice(CLIENT_SLOT_ID);
+        }
+        if (dci_intf_.has_value()) {
+            dci_intf_->SetConnected(false);
+        }
+
+        // Signal our thread to complete pending transactions.
+        sync_completion_signal(&completion_);
+    }
 }
 
 zx_status_t UsbVirtualBus::SetStall(uint8_t ep_address, bool stall) {
@@ -281,14 +336,27 @@ void UsbVirtualBus::UsbDciRequestQueue(usb_request_t* req,
     auto* req_int = USB_REQ_TO_INTERNAL(req);
     req_int->complete_cb = *complete_cb;
 
+printf("UsbDciRequestQueue start\n");
     uint8_t index = ep_address_to_index(req->header.ep_address);
     if (index == 0 || index >= USB_MAX_EPS) {
         printf("%s: bad endpoint %u\n", __func__, req->header.ep_address);
         usb_request_complete(req, ZX_ERR_INVALID_ARGS, 0, complete_cb);
         return;
     }
+printf("UsbDciRequestQueue 2\n");
+    lock_.Acquire();
+printf("UsbDciRequestQueue 3\n");
+    if (!connected_) {
+printf("UsbDciRequestQueue ZX_ERR_IO_NOT_PRESENT\n");
+        lock_.Release();
+        usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, complete_cb);
+        return;
+    }
 
     list_add_tail(&eps_[index].device_reqs, &req_int->node);
+    lock_.Release();
+
+printf("UsbDciRequestQueue done\n");
     sync_completion_signal(&completion_);
 }
 
@@ -326,6 +394,7 @@ void UsbVirtualBus::UsbHciRequestQueue(usb_request_t* req,
                                        const usb_request_complete_t* complete_cb) {
     auto* req_int = USB_REQ_TO_INTERNAL(req);
     req_int->complete_cb = *complete_cb;
+printf("UsbHciRequestQueue start\n");
 
     uint8_t index = ep_address_to_index(req->header.ep_address);
     if (index >= USB_MAX_EPS) {
@@ -334,14 +403,26 @@ void UsbVirtualBus::UsbHciRequestQueue(usb_request_t* req,
         return;
     }
 
+    lock_.Acquire();
+    if (!connected_) {
+printf("UsbHciRequestQueue ZX_ERR_IO_NOT_PRESENT\n");
+        lock_.Release();
+        usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, complete_cb);
+        return;
+    }
+
     usb_virtual_ep_t* ep = &eps_[index];
 
     if (ep->stalled) {
+        lock_.Release();
+printf("UsbHciRequestQueue ZX_ERR_IO_REFUSED\n");
         usb_request_complete(req, ZX_ERR_IO_REFUSED, 0, complete_cb);
         return;
     }
     list_add_tail(&ep->host_reqs, &req_int->node);
+    lock_.Release();
 
+printf("UsbHciRequestQueue done\n");
     sync_completion_signal(&completion_);
 }
 
@@ -430,6 +511,8 @@ zx_status_t UsbVirtualBus::MsgEnable(fidl_txn_t* txn) {
 }
 
 zx_status_t UsbVirtualBus::MsgDisable(fidl_txn_t* txn) {
+    SetConnected(false);
+
     fbl::AutoLock lock(&lock_);
 
     // Use release() here to avoid double free of these objects.
@@ -451,17 +534,7 @@ zx_status_t UsbVirtualBus::MsgConnect(fidl_txn_t* txn) {
         return fuchsia_usb_virtualbus_BusConnect_reply(txn, ZX_ERR_BAD_STATE);
     }
 
-    if (!connected_) {
-        connected_ = true;
-
-        if (bus_intf_.has_value()) {
-            bus_intf_->AddDevice(CLIENT_SLOT_ID, CLIENT_HUB_ID, CLIENT_SPEED);
-        }
-        if (dci_intf_.has_value()) {
-            dci_intf_->SetConnected(true);
-        }
-    }
-
+    SetConnected(true);
     return fuchsia_usb_virtualbus_BusConnect_reply(txn, ZX_OK);
 }
 
@@ -470,17 +543,7 @@ zx_status_t UsbVirtualBus::MsgDisconnect(fidl_txn_t* txn) {
         return fuchsia_usb_virtualbus_BusDisconnect_reply(txn, ZX_ERR_BAD_STATE);
     }
 
-    if (connected_) {
-        connected_ = false;
-
-        if (bus_intf_.has_value()) {
-            bus_intf_->RemoveDevice(CLIENT_SLOT_ID);
-        }
-        if (dci_intf_.has_value()) {
-            dci_intf_->SetConnected(false);
-        }
-    }
-
+    SetConnected(false);
     return fuchsia_usb_virtualbus_BusDisconnect_reply(txn, ZX_OK);
 }
 

@@ -85,6 +85,7 @@ private:
     zx_status_t Init();
     zx_status_t CreateDevice();
     zx_status_t CreateHost();
+    void SetConnected(bool connected);
     int Thread();
     void HandleControl(usb_request_t* req);
     zx_status_t SetStall(uint8_t ep_address, bool stall);
@@ -100,8 +101,8 @@ private:
     thrd_t thread_;
     fbl::Mutex lock_;
     sync_completion_t completion_;
-    bool connected_;
-    bool unbinding_;
+    bool connected_ __TA_GUARDED(lock_);
+    bool unbinding_ __TA_GUARDED(lock_);
 };
 
 } // namespace usb_virtual_bus
