@@ -218,7 +218,5 @@ private:
     fbl::WAVLTree<vmoid_t, fbl::RefPtr<IoBuffer>> tree_ TA_GUARDED(server_lock_);
     vmoid_t last_id_ TA_GUARDED(server_lock_);
 
-    const ioqueue::QueueOps ops_ = {
-        .context = this,
-    };
+    ioqueue::QueueOps ops_{};
 };

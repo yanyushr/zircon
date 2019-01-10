@@ -90,9 +90,29 @@ void InQueueAdd(zx_handle_t vmo, uint64_t length, uint64_t vmo_offset,
     queue->push_back(msg);
 }
 
+zx_status_t acquire_op(void* context, ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait) {
+    return ZX_OK;
+}
+
+zx_status_t issue_op(void* context, ioqueue::io_op_t* op) {
+    return ZX_OK;
+}
+
+void release_op(void* context, ioqueue::io_op_t* op) {
+
+}
+
+void cancel_acquire_op(void* context) {
+
+}
+
+void fatal_from_queue(void* context) {
+    ZX_DEBUG_ASSERT(false);
+}
+
 }  // namespace
 
-IoBuffer::IoBuffer(zx::vmo vmo, vmoid_t id) : io_vmo_(std::move(vmo)), vmoid_(id) {}
+IoBuffer::IoBuffer(zx::vmo vmo, vmoid_t id) : io_vmo_(std::move(vmo)), vmoid_(id) { }
 
 IoBuffer::~IoBuffer() {}
 
@@ -497,6 +517,12 @@ BlockServer::BlockServer(ddk::BlockProtocolClient* bp) :
     last_id_(VMOID_INVALID + 1) {
     size_t block_op_size;
     bp->Query(&info_, &block_op_size);
+    ops_.acquire = acquire_op;
+    ops_.issue = issue_op;
+    ops_.release = release_op;
+    ops_.cancel_acquire = cancel_acquire_op;
+    ops_.fatal = fatal_from_queue;
+    ops_.context = this;
 }
 
 BlockServer::~BlockServer() {
