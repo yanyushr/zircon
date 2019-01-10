@@ -21,15 +21,6 @@
 
 namespace usb_virtual_bus {
 
-struct usb_virtual_ep_t {
-    list_node_t host_reqs;
-    list_node_t device_reqs;
-    // offset into current host req, for dealing with host reqs that are bigger than
-    // their matching device req
-    zx_off_t req_offset;
-    bool stalled;
-};
-
 class UsbVirtualBus;
 class UsbVirtualDevice;
 class UsbVirtualHost;
@@ -81,6 +72,15 @@ public:
 
 private:
     DISALLOW_COPY_ASSIGN_AND_MOVE(UsbVirtualBus);
+
+    struct usb_virtual_ep_t {
+        list_node_t host_reqs __TA_GUARDED(lock_);
+        list_node_t device_reqs __TA_GUARDED(lock_);
+        // offset into current host req, for dealing with host reqs that are bigger than
+        // their matching device req
+        zx_off_t req_offset;
+        bool stalled;
+    };
 
     zx_status_t Init();
     zx_status_t CreateDevice();

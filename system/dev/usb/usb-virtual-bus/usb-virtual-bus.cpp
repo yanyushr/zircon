@@ -128,11 +128,9 @@ int UsbVirtualBus::Thread() {
         sync_completion_wait(&completion_, ZX_TIME_INFINITE);
         sync_completion_reset(&completion_);
 
-printf("thread acquire\n");
         lock_.Acquire();
 
         if (unbinding_) {
-printf("unbinding_\n");
             for (unsigned i = 0; i < USB_MAX_EPS; i++) {
                 usb_virtual_ep_t* ep = &eps_[i];
 
@@ -146,12 +144,12 @@ printf("unbinding_\n");
                 }
             }
 
-printf("thread release 1\n");
             lock_.Release();
 
+            // Complete requests outside of the lock to avoid deadlock.
             while ((req_int = list_remove_head_type(&completed, virt_usb_req_internal_t, node))
                     != nullptr) {
-                usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);               
+                usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);
                 usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, &req_int->complete_cb);
             }
             
@@ -162,6 +160,7 @@ printf("thread release 1\n");
         while ((req_int = list_remove_head_type(&eps_[0].host_reqs, virt_usb_req_internal_t, node))
                 != nullptr) {
             lock_.Release();
+            // Handle control requests outside of the lock to avoid deadlock.
             HandleControl(INTERNAL_TO_USB_REQ(req_int));
             lock_.Acquire();
         }
@@ -214,12 +213,12 @@ printf("thread release 1\n");
             }
         }
 
-printf("thread release 2\n");
         lock_.Release();
 
+        // Complete requests outside of the lock to avoid deadlock.
         while ((req_int = list_remove_head_type(&completed, virt_usb_req_internal_t, node))
                 != nullptr) {
-            usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);               
+            usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);
             usb_request_complete(req, req->response.status, req->response.actual,
                                  &req_int->complete_cb);
         }
@@ -278,8 +277,31 @@ void UsbVirtualBus::SetConnected(bool connected) {
             dci_intf_->SetConnected(false);
         }
 
-        // Signal our thread to complete pending transactions.
-        sync_completion_signal(&completion_);
+        lock_.Acquire();
+
+        list_node_t completed = LIST_INITIAL_VALUE(completed);
+        virt_usb_req_internal_t* req_int;
+
+        for (unsigned i = 0; i < USB_MAX_EPS; i++) {
+            usb_virtual_ep_t* ep = &eps_[i];
+
+            while ((req_int = list_remove_head_type(&ep->host_reqs, virt_usb_req_internal_t, node))
+                    != nullptr) {
+                list_add_tail(&completed, &req_int->node);
+            }
+            while ((req_int = list_remove_head_type(&ep->device_reqs, virt_usb_req_internal_t, node))
+                    != nullptr) {
+                list_add_tail(&completed, &req_int->node);
+            }
+        }
+
+       lock_.Release();
+
+        while ((req_int = list_remove_head_type(&completed, virt_usb_req_internal_t, node))
+                != nullptr) {
+            usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);
+            usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, &req_int->complete_cb);
+        }
     }
 }
 
@@ -336,18 +358,14 @@ void UsbVirtualBus::UsbDciRequestQueue(usb_request_t* req,
     auto* req_int = USB_REQ_TO_INTERNAL(req);
     req_int->complete_cb = *complete_cb;
 
-printf("UsbDciRequestQueue start\n");
     uint8_t index = ep_address_to_index(req->header.ep_address);
     if (index == 0 || index >= USB_MAX_EPS) {
         printf("%s: bad endpoint %u\n", __func__, req->header.ep_address);
         usb_request_complete(req, ZX_ERR_INVALID_ARGS, 0, complete_cb);
         return;
     }
-printf("UsbDciRequestQueue 2\n");
     lock_.Acquire();
-printf("UsbDciRequestQueue 3\n");
     if (!connected_) {
-printf("UsbDciRequestQueue ZX_ERR_IO_NOT_PRESENT\n");
         lock_.Release();
         usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, complete_cb);
         return;
@@ -356,7 +374,6 @@ printf("UsbDciRequestQueue ZX_ERR_IO_NOT_PRESENT\n");
     list_add_tail(&eps_[index].device_reqs, &req_int->node);
     lock_.Release();
 
-printf("UsbDciRequestQueue done\n");
     sync_completion_signal(&completion_);
 }
 
@@ -394,7 +411,6 @@ void UsbVirtualBus::UsbHciRequestQueue(usb_request_t* req,
                                        const usb_request_complete_t* complete_cb) {
     auto* req_int = USB_REQ_TO_INTERNAL(req);
     req_int->complete_cb = *complete_cb;
-printf("UsbHciRequestQueue start\n");
 
     uint8_t index = ep_address_to_index(req->header.ep_address);
     if (index >= USB_MAX_EPS) {
@@ -405,7 +421,6 @@ printf("UsbHciRequestQueue start\n");
 
     lock_.Acquire();
     if (!connected_) {
-printf("UsbHciRequestQueue ZX_ERR_IO_NOT_PRESENT\n");
         lock_.Release();
         usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, complete_cb);
         return;
@@ -415,14 +430,12 @@ printf("UsbHciRequestQueue ZX_ERR_IO_NOT_PRESENT\n");
 
     if (ep->stalled) {
         lock_.Release();
-printf("UsbHciRequestQueue ZX_ERR_IO_REFUSED\n");
         usb_request_complete(req, ZX_ERR_IO_REFUSED, 0, complete_cb);
         return;
     }
     list_add_tail(&ep->host_reqs, &req_int->node);
     lock_.Release();
 
-printf("UsbHciRequestQueue done\n");
     sync_completion_signal(&completion_);
 }
 
