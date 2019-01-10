@@ -122,19 +122,31 @@ zx_status_t UsbVirtualBus::Init() {
 
 int UsbVirtualBus::Thread() {
     while (1) {
+        virt_usb_req_internal_t* req_int;
+
         sync_completion_wait(&completion_, ZX_TIME_INFINITE);
         sync_completion_reset(&completion_);
 
         fbl::AutoLock lock(&lock_);
         if (unbinding_) {
             for (unsigned i = 0; i < USB_MAX_EPS; i++) {
-                // TODO complete them all no device?
+                usb_virtual_ep_t* ep = &eps_[i];
+
+                while ((req_int = list_peek_head_type(&ep->host_reqs, virt_usb_req_internal_t, node))
+                        != nullptr) {
+                    usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);                       
+                    usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, &req_int->complete_cb);
+                }
+                while ((req_int = list_peek_head_type(&ep->device_reqs, virt_usb_req_internal_t, node))
+                        != nullptr) {
+                    usb_request_t* req = INTERNAL_TO_USB_REQ(req_int);                       
+                    usb_request_complete(req, ZX_ERR_IO_NOT_PRESENT, 0, &req_int->complete_cb);
+                }
             }
             return 0;
         }
 
         // special case endpoint zero
-        virt_usb_req_internal_t* req_int;
         while ((req_int = list_remove_head_type(&eps_[0].host_reqs, virt_usb_req_internal_t, node))
                 != nullptr) {
             HandleControl(INTERNAL_TO_USB_REQ(req_int));
