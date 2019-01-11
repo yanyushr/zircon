@@ -43,22 +43,6 @@ public:
     zx_status_t AttachVmo(zx::vmo vmo, vmoid_t* out_vmoid);
 
 private:
-    enum class ThreadState : uint32_t {
-        // No server is currently executing.
-        None,
-        // The server is executing right now.
-        Running,
-        // The server has finished executing, and is ready to be joined.
-        Joinable,
-    };
-
-    // Queries if the Fifo Server is running, possibly cleaning up the old server's
-    // thread if one exists.
-    bool IsFifoServerRunning();
-
-    // Joins the completed server thread and clean up all resources it may have used.
-    void JoinServer();
-
     // Frees the Fifo server, cleaning up "server_" and setting the thread state to none.
     //
     // Precondition: No background thread is executing.
@@ -68,16 +52,9 @@ private:
     // closes their end of the Fifo.
     static int RunServer(void* arg);
 
-    ThreadState GetState() const {
-        return static_cast<ThreadState>(state_.load());
-    }
-
-    void SetState(ThreadState state) {
-        state_.store(static_cast<uint32_t>(state));
-    }
-
-    thrd_t thread_;
-    std::atomic<uint32_t> state_;
+    // thrd_t thread_;
+    bool server_running_ = false;
     fbl::unique_ptr<BlockServer> server_ = nullptr;
     fbl::unique_ptr<ioqueue::Queue> queue_ = nullptr;
+    uint32_t stream_id_;
 };

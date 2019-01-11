@@ -15,6 +15,7 @@ Queue::Queue(const QueueOps* ops) : sched_(), shutdown_(false), ops_(ops) {
 }
 
 Queue::~Queue() {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
 #if 0
     if (!shutdown_) {
         Shutdown();
@@ -43,6 +44,7 @@ Queue::~Queue() {
 }
 
 zx_status_t Queue::OpenStream(uint32_t priority, uint32_t* id_out) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     if (priority > IO_SCHED_MAX_PRI) {
         return ZX_ERR_INVALID_ARGS;
     }
@@ -66,6 +68,7 @@ zx_status_t Queue::OpenStream(uint32_t priority, uint32_t* id_out) {
 }
 
 zx_status_t Queue::CloseStream(uint32_t id) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     for (bool first = true; ; first = false) {
         fbl::AutoLock lock(&lock_);
         if (first) {
@@ -96,6 +99,7 @@ zx_status_t Queue::CloseStream(uint32_t id) {
 }
 
 zx_status_t Queue::Serve(uint32_t num_workers) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     if ((num_workers == 0) || (num_workers > IO_QUEUE_MAX_WORKERS)) {
         return ZX_ERR_INVALID_ARGS;
     }
@@ -114,6 +118,7 @@ zx_status_t Queue::Serve(uint32_t num_workers) {
 }
 
 void Queue::Shutdown() {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     fbl::AutoLock lock(&lock_);
     assert(shutdown_ == false);
     shutdown_ = true;
@@ -121,6 +126,7 @@ void Queue::Shutdown() {
 }
 
 void Queue::WorkerExited(uint32_t id) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     fbl::AutoLock lock(&lock_);
     active_workers_--;
     printf("worker %u exiting, num_workers = %u\n", id, active_workers_);
@@ -146,14 +152,17 @@ void Queue::ReleaseAcquireSlot() {
 }
 
 zx_status_t Queue::OpAcquire(io_op_t** op_list, uint32_t* op_count, bool wait) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     return ops_->acquire(ops_->context, op_list, op_count, wait);
 }
 
 zx_status_t Queue::OpIssue(io_op_t* op) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     return ops_->issue(ops_->context, op);
 }
 
 void Queue::OpRelease(io_op_t* op) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     ops_->release(ops_->context, op);
 }
 

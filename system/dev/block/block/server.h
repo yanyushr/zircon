@@ -155,7 +155,7 @@ public:
     // Starts the BlockServer using the current thread
     zx_status_t Serve() TA_EXCL(server_lock_);
     zx_status_t AttachVmo(zx::vmo vmo, vmoid_t* out) TA_EXCL(server_lock_);
-    const ioqueue::QueueOps* GetOps() { return &ops_; }
+    ioqueue::QueueOps* GetOps() { return &ops_; }
 
     // Updates the total number of pending txns, possibly signals
     // the queue-draining thread to wake up if they are waiting
@@ -171,7 +171,7 @@ public:
     // (If appropriate) tells the client that their operation is done.
     void TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group);
 
-    void ShutDown();
+    void Shutdown();
     ~BlockServer();
 private:
     DISALLOW_COPY_ASSIGN_AND_MOVE(BlockServer);
@@ -200,6 +200,19 @@ private:
     void InQueueDrainer();
 
     zx_status_t FindVmoIDLocked(vmoid_t* out) TA_REQ(server_lock_);
+
+    // Called indirectly by Queue ops.
+    zx_status_t ReadOps(ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait);
+
+
+    // Queue ops
+    static zx_status_t OpAcquire(void* context, ioqueue::io_op_t** op_list, uint32_t* op_count,
+                                  bool wait);
+    static zx_status_t OpIssue(void* context, ioqueue::io_op_t* op);
+    static void OpRelease(void* context, ioqueue::io_op_t* op);
+    static void OpCancelAcquire(void* context);
+    static void FatalFromQueue(void* context);
+
 
     fzl::fifo<block_fifo_response_t, block_fifo_request_t> fifo_;
     block_info_t info_;

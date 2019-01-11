@@ -90,26 +90,6 @@ void InQueueAdd(zx_handle_t vmo, uint64_t length, uint64_t vmo_offset,
     queue->push_back(msg);
 }
 
-zx_status_t acquire_op(void* context, ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait) {
-    return ZX_OK;
-}
-
-zx_status_t issue_op(void* context, ioqueue::io_op_t* op) {
-    return ZX_OK;
-}
-
-void release_op(void* context, ioqueue::io_op_t* op) {
-
-}
-
-void cancel_acquire_op(void* context) {
-
-}
-
-void fatal_from_queue(void* context) {
-    ZX_DEBUG_ASSERT(false);
-}
-
 }  // namespace
 
 IoBuffer::IoBuffer(zx::vmo vmo, vmoid_t id) : io_vmo_(std::move(vmo)), vmoid_(id) { }
@@ -198,6 +178,89 @@ zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t* count) {
         }
     }
 }
+
+struct RequestWrapper {
+    RequestWrapper(const block_fifo_request_t* req);
+
+    ioqueue::io_op_t op_;
+    block_fifo_request_t request_;
+};
+
+RequestWrapper::RequestWrapper(const block_fifo_request_t* req) {
+    memset(&op_, 0, sizeof(op_));
+    memcpy(&request_, req, sizeof(request_));
+    // todo: set opcode, sid
+}
+
+zx_status_t BlockServer::ReadOps(ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    uint32_t max_ops = *op_count;
+    if (max_ops == 0) {
+        printf("%s:%u\n", __FUNCTION__, __LINE__);
+        return ZX_ERR_INVALID_ARGS;
+    }
+    if (max_ops > BLOCK_FIFO_MAX_DEPTH) {
+        max_ops = BLOCK_FIFO_MAX_DEPTH;
+    }
+    block_fifo_request_t requests[BLOCK_FIFO_MAX_DEPTH];
+    size_t count;
+    zx_status_t status;
+    for ( ; ; ) {
+        if ((status = fifo_.read(requests, BLOCK_FIFO_MAX_DEPTH, &count)) == ZX_OK) {
+            break;
+        }
+        printf("%s:%u\n", __FUNCTION__, __LINE__);
+        if (status != ZX_ERR_SHOULD_WAIT) {
+            printf("%s:%u\n", __FUNCTION__, __LINE__);
+            printf("read error\n");
+            return ZX_ERR_IO;
+        }
+        zx_signals_t signals = ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED |
+                               kSignalFifoTerminate | kSignalFifoOpsComplete;
+        zx_signals_t seen;
+        status = fifo_.wait_one(signals, zx::time::infinite(), &seen);
+        if (status == ZX_ERR_CANCELED) {
+            // Fifo closed locally by shutdown routine.
+            return ZX_ERR_CANCELED;
+        }
+        if (status != ZX_OK) {
+            return ZX_ERR_IO;
+        }
+            // if (seen & kSignalFifoOpsComplete) {
+            //     BarrierComplete();
+            //     continue;
+            // }
+        if ((seen & ZX_FIFO_PEER_CLOSED) || (seen & kSignalFifoTerminate)) {
+            printf("%s:%u\n", __FUNCTION__, __LINE__);
+            return ZX_ERR_CANCELED;  // todo: switch to ZX_ERR_PEER_CLOSED
+        }
+    }
+    // todo: make this not suck.
+    memset(op_list, 0, sizeof(op_list[0]) * max_ops);
+    fbl::AllocChecker ac;
+    status = ZX_OK;
+    for (size_t i = 0; i < count; i++) {
+        RequestWrapper* wrapper = new (&ac) RequestWrapper(&requests[i]);
+        if (!ac.check()) {
+            status = ZX_ERR_IO;
+            printf("%s:%u\n", __FUNCTION__, __LINE__);
+            break;
+        }
+        op_list[i] = &wrapper->op_;
+    }
+    if (status != ZX_OK) {
+        for (size_t i = 0; i < max_ops; i++) {
+            if (op_list[i] != nullptr) {
+                delete op_list[i];
+                op_list[i] = nullptr;
+            }
+        }
+        count = 0;
+    }
+    *op_count = static_cast<uint32_t>(count);
+    return status;
+}
+
 
 zx_status_t BlockServer::FindVmoIDLocked(vmoid_t* out) {
     for (vmoid_t i = last_id_; i < std::numeric_limits<vmoid_t>::max(); i++) {
@@ -517,11 +580,11 @@ BlockServer::BlockServer(ddk::BlockProtocolClient* bp) :
     last_id_(VMOID_INVALID + 1) {
     size_t block_op_size;
     bp->Query(&info_, &block_op_size);
-    ops_.acquire = acquire_op;
-    ops_.issue = issue_op;
-    ops_.release = release_op;
-    ops_.cancel_acquire = cancel_acquire_op;
-    ops_.fatal = fatal_from_queue;
+    ops_.acquire = OpAcquire;
+    ops_.issue = OpIssue;
+    ops_.release = OpRelease;
+    ops_.cancel_acquire = OpCancelAcquire;
+    ops_.fatal = FatalFromQueue;
     ops_.context = this;
 }
 
@@ -530,11 +593,35 @@ BlockServer::~BlockServer() {
     ZX_ASSERT(in_queue_.is_empty());
 }
 
-void BlockServer::ShutDown() {
+void BlockServer::Shutdown() {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     // Identify that the server should stop reading and return,
     // implicitly closing the fifo.
-    fifo_.signal(0, kSignalFifoTerminate);
-    zx_signals_t signals = kSignalFifoTerminated;
-    zx_signals_t seen;
-    fifo_.wait_one(signals, zx::time::infinite(), &seen);
+    // fifo_.signal(0, kSignalFifoTerminate);
+    // zx_signals_t signals = kSignalFifoTerminated;
+    // zx_signals_t seen;
+    // fifo_.wait_one(signals, zx::time::infinite(), &seen);
+}
+
+zx_status_t BlockServer::OpAcquire(void* context, ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait) {
+    printf("acquire op\n");
+    BlockServer* bs = static_cast<BlockServer*>(context);
+    return bs->ReadOps(op_list, op_count, wait);
+}
+
+zx_status_t BlockServer::OpIssue(void* context, ioqueue::io_op_t* op) {
+    printf("issue op\n");
+    return ZX_OK;
+}
+
+void BlockServer::OpRelease(void* context, ioqueue::io_op_t* op) {
+    printf("release op\n");
+}
+
+void BlockServer::OpCancelAcquire(void* context) {
+    printf("cancel acquire\n");
+}
+
+void BlockServer::FatalFromQueue(void* context) {
+    ZX_DEBUG_ASSERT(false);
 }

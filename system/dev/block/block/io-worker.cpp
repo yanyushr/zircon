@@ -45,6 +45,7 @@ void Worker::ThreadMain() {
 }
 
 void Worker::WorkerLoop() {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     zx_status_t status;
     for ( ; ; ) {
         if (!cancelled_) {
@@ -57,6 +58,7 @@ void Worker::WorkerLoop() {
                 // Cancel received.
                 //      drain the queue and exit.
             } else {
+                printf("failed, status = %d\n", status);
                 assert(false);
             }
         }
@@ -76,9 +78,11 @@ void Worker::WorkerLoop() {
 }
 
 zx_status_t Worker::AcquireLoop() {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     zx_status_t status = q_->GetAcquireSlot();
     if (status != ZX_OK) {
         // Acquire slots are full, not an error.
+        printf("%s:%u\n", __FUNCTION__, __LINE__);
         return ZX_OK;
     }
 
@@ -96,10 +100,12 @@ zx_status_t Worker::AcquireLoop() {
     }
 
     q_->ReleaseAcquireSlot();
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     return status;
 }
 
 zx_status_t Worker::AcquireOps(bool wait, uint32_t* out_num_ready) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     io_op_t* op_list[32];
     uint32_t op_count = (sizeof(op_list) / sizeof(io_op_t*));
     zx_status_t status = q_->OpAcquire(op_list, &op_count, wait);
@@ -122,10 +128,12 @@ zx_status_t Worker::AcquireOps(bool wait, uint32_t* out_num_ready) {
             }
         }
     }
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     return ZX_OK;
 }
 
 zx_status_t Worker::IssueLoop() {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     Scheduler* sched = q_->GetScheduler();
     bool wait = cancelled_;
     for ( ; ; ) {
