@@ -16,30 +16,9 @@ Queue::Queue(const QueueOps* ops) : sched_(), shutdown_(false), ops_(ops) {
 
 Queue::~Queue() {
     printf("%s:%u\n", __FUNCTION__, __LINE__);
-#if 0
     if (!shutdown_) {
         Shutdown();
     }
-
-    // No other API calls may enter queue beyond this point.
-
-    // Wake threads blocking on incoming ops.
-    ops_->cancel_acquire(ops_->context);
-
-    sched_.WaitUntilDrained();
-
-    {
-        fbl::AutoLock lock(&lock_);
-        if (active_workers_ > 0) {
-            printf("q: waiting on worker exit\n");
-            cnd_wait(&event_workers_exited_, lock_.GetInternal());
-            assert(active_workers_ == 0);
-        }
-        for (uint32_t i = 0; i < num_workers_; i++) {
-            worker[i].Join();
-        }
-    }
-#endif
     cnd_destroy(&event_workers_exited_);
 }
 
@@ -119,10 +98,27 @@ zx_status_t Queue::Serve(uint32_t num_workers) {
 
 void Queue::Shutdown() {
     printf("%s:%u\n", __FUNCTION__, __LINE__);
-    fbl::AutoLock lock(&lock_);
     assert(shutdown_ == false);
     shutdown_ = true;
+
+    // Wake threads blocking on incoming ops.
+    ops_->cancel_acquire(ops_->context);
+    // Close all open streams.
     sched_.CloseAll();
+    // Wait until all ops have been completed.
+    sched_.WaitUntilDrained();
+    // Wait for all workers to exit.
+    {
+        fbl::AutoLock lock(&lock_);
+        if (active_workers_ > 0) {
+            printf("q: waiting on worker exit\n");
+            cnd_wait(&event_workers_exited_, lock_.GetInternal());
+            assert(active_workers_ == 0);
+        }
+        for (uint32_t i = 0; i < num_workers_; i++) {
+            worker[i].Join();
+        }
+    }
 }
 
 void Queue::WorkerExited(uint32_t id) {

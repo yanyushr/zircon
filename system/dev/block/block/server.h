@@ -203,6 +203,7 @@ private:
 
     // Called indirectly by Queue ops.
     zx_status_t ReadOps(ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait);
+    void SignalFifoCancel();
 
 
     // Queue ops

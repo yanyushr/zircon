@@ -47,13 +47,19 @@ void Worker::ThreadMain() {
 void Worker::WorkerLoop() {
     printf("%s:%u\n", __FUNCTION__, __LINE__);
     zx_status_t status;
+
+    uint32_t num_ready = 0;
+    bool wait_on_acquire = false;
     for ( ; ; ) {
         if (!cancelled_) {
-            // Fill to high watermark if data is available.
-            status = AcquireLoop();
-            if ((status == ZX_OK) || (status == ZX_ERR_SHOULD_WAIT)) {
-                // Successfully read some or no ops available to read but queue has pending ops.
-                //      service queue.
+            // Read some ops.
+            status = AcquireOps(wait_on_acquire, &num_ready);
+            if (status == ZX_OK) {
+                // Read a few ops.
+                wait_on_acquire = false;
+            } else if (status == ZX_ERR_SHOULD_WAIT) {
+                // no ops available.
+                wait_on_acquire = true;
             } else if (status == ZX_ERR_CANCELED) {
                 // Cancel received.
                 //      drain the queue and exit.
@@ -65,16 +71,47 @@ void Worker::WorkerLoop() {
         status = IssueLoop();
         if (status == ZX_ERR_SHOULD_WAIT) {
             // No issue slots available.
-
-            // Make the decision whether to block on completion. ???
-
+            wait_on_acquire = true;
         } else if (status == ZX_ERR_UNAVAILABLE) {
             if (cancelled_) {
                 // No more ops to issue. Work is completed.
+                printf("worker exiting, cancelled\n");
                 return;
             }
+            wait_on_acquire = true;
+        } else {
+            assert(status == ZX_OK);
         }
     }
+
+    // for ( ; ; ) {
+    //     if (!cancelled_) {
+    //         // Fill to high watermark if data is available.
+    //         status = AcquireLoop();
+    //         if ((status == ZX_OK) || (status == ZX_ERR_SHOULD_WAIT)) {
+    //             // Successfully read some or no ops available to read but queue has pending ops.
+    //             //      service queue.
+    //         } else if (status == ZX_ERR_CANCELED) {
+    //             // Cancel received.
+    //             //      drain the queue and exit.
+    //         } else {
+    //             printf("failed, status = %d\n", status);
+    //             assert(false);
+    //         }
+    //     }
+    //     status = IssueLoop();
+    //     if (status == ZX_ERR_SHOULD_WAIT) {
+    //         // No issue slots available.
+
+    //         // Make the decision whether to block on completion. ???
+
+    //     } else if (status == ZX_ERR_UNAVAILABLE) {
+    //         if (cancelled_) {
+    //             // No more ops to issue. Work is completed.
+    //             return;
+    //         }
+    //     }
+    // }
 }
 
 zx_status_t Worker::AcquireLoop() {

@@ -593,6 +593,10 @@ BlockServer::~BlockServer() {
     ZX_ASSERT(in_queue_.is_empty());
 }
 
+void BlockServer::SignalFifoCancel() {
+    fifo_.signal(0, kSignalFifoTerminate);
+}
+
 void BlockServer::Shutdown() {
     printf("%s:%u\n", __FUNCTION__, __LINE__);
     // Identify that the server should stop reading and return,
@@ -620,6 +624,8 @@ void BlockServer::OpRelease(void* context, ioqueue::io_op_t* op) {
 
 void BlockServer::OpCancelAcquire(void* context) {
     printf("cancel acquire\n");
+    BlockServer* bs = static_cast<BlockServer*>(context);
+    bs->SignalFifoCancel();
 }
 
 void BlockServer::FatalFromQueue(void* context) {
