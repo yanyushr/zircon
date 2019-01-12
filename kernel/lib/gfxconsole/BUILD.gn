@@ -1,0 +1,19 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+library("gfxconsole") {
+  kernel = true
+  sources = [
+    "gfxconsole.cpp",
+  ]
+  deps = [
+    "$zx/kernel/lib/gfx",
+  ]
+  public_deps = [
+    # <lib/gfxconsole.h> has #include <lib/gfx.h>.
+    "$zx/kernel/lib/gfx",
+  ]
+}

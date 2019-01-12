@@ -1,0 +1,18 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+source_set("env") {
+  configs -= [ "$zx/public/gn/config:user" ]
+  configs += [ "$zx/third_party/ulib/musl:musl_config" ]
+  sources = [
+    "__environ.c",
+    "__libc_start_main.c",
+    "__stack_chk_fail.c",
+    "clearenv.c",
+    "getenv.c",
+    "putenv.c",
+    "setenv.c",
+    "unsetenv.c",
+  ]
+}

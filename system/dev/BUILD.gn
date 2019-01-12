@@ -1,0 +1,36 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("dev") {
+  testonly = true
+  deps = [
+    "$zx/system/ulib/ddktl:ddktl-test",
+    "audio",
+    "block",
+    "bluetooth",
+    "board",
+    "bus",
+    "camera",
+    "clk",
+    "codec",
+    "display",
+    "ethernet",
+    "gpio",
+    "gpu",
+    "i2c",
+    "input",
+    "light",
+    "misc",
+    "nand",
+    "pci",
+    "rtc",
+    "sample",
+    "scpi",
+    "serial",
+    "tee",
+    "test",
+    "thermal",
+    "usb",
+  ]
+}

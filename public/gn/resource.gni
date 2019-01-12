@@ -1,0 +1,64 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Looks just like a copy() target but $outputs are relative target paths.
+# Using $data_deps to this resource() target in each target whose code uses
+# $outputs at runtime ensures that the files will be present on the system.
+template("resource") {
+  group(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "metadata",
+                             "outputs",
+                             "sources",
+                           ])
+    metadata = {
+      manifest_lines = []
+      if (defined(invoker.metadata)) {
+        forward_variables_from(invoker.metadata, "*")
+      }
+      foreach(source, invoker.sources) {
+        foreach(target, process_file_template([ source ], invoker.outputs)) {
+          assert(rebase_path(target, "foo") != target,
+                 "`outputs` in resource() cannot start with /")
+          manifest_lines +=
+              [ target + "=" + rebase_path(source, root_build_dir) ]
+        }
+      }
+    }
+  }
+}
+
+# Looks just like a generated_file() target but $outputs is like resource().
+template("generated_resource") {
+  generated_file(target_name) {
+    forward_variables_from(invoker, "*", [ "metadata" ])
+    assert(outputs == [ outputs[0] ],
+           "generated_resource() requires a single element in `outputs")
+
+    # Select a place to generate the contents at `gn gen` time.
+    file = "$target_gen_dir/$target_name"
+    if (defined(output_conversion) && output_conversion == "json") {
+      file += ".json"
+    } else {
+      file += ".txt"
+    }
+
+    # Add metadata to add that file to a filesystem image.
+    metadata = {
+      manifest_lines = []
+      if (defined(invoker.metadata)) {
+        forward_variables_from(invoker.metadata, "*")
+      }
+      manifest_lines += [ "${outputs[0]}=" + rebase_path(file, root_build_dir) ]
+    }
+
+    # That static file is the actual output of this target.
+    outputs = []
+    outputs = [
+      file,
+    ]
+  }
+}

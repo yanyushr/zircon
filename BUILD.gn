@@ -2,18 +2,25 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("$zx/public/gn/build_api.gni")
 import("$zx/public/gn/config/standard.gni")
+import("$zx/public/gn/host_tool_action.gni")
+import("$zx/public/gn/pkg.gni")
+import("$zx/public/gn/toolchain/c_utils.gni")
 import("$zx/public/gn/toolchain/select_toolchain.gni")
+import("$zx/public/gn/zbi.gni")
 
 # Build the native host tools intended for developer use.
-select_toolchain("tools-${host_os}-${host_cpu}") {
-  testonly = true
-  environment_label = "$zx/public/gn/toolchain:host"
-  cpu = host_cpu
-  os = host_os
-  deps = [
-    "$zx/system/host:tools",
-  ]
+foreach(host, standard_build_hosts) {
+  select_toolchain("tools-${host.os}-${host.cpu}") {
+    testonly = true
+    environment_label = "$zx/public/gn/toolchain:host"
+    cpu = host.cpu
+    os = host.os
+    deps = [
+      "$zx/system/host:tools",
+    ]
+  }
 }
 
 if (current_toolchain == default_toolchain) {
@@ -52,11 +59,265 @@ if (current_toolchain == default_toolchain) {
       rebase_path(tools_rspfile, root_build_dir),
     ]
   }
+
+  # TODO(mcgrathr): Temporary hacks for integrating with the legacy Fuchsia
+  # GN build.
+  host_tests_rspfile = "$target_gen_dir/host_tests.rsp"
+  generated_file("host_tests._rsp") {
+    visibility = [ ":legacy-host_tests" ]
+    testonly = true
+    outputs = [
+      host_tests_rspfile,
+    ]
+    deps = [
+      "system/utest:host"
+    ]
+    output_conversion = "list lines"
+    data_keys = [ "link_output" ]
+    walk_keys = [ "link_barrier" ]
+  }
+
+  action("legacy-host_tests") {
+    testonly = true
+    deps = [
+      ":host_tests._rsp",
+    ]
+    script = "$zx/scripts/copy-files"
+    depfile = "$target_out_dir/$target_name.d"
+    outputs = [
+      depfile,
+    ]
+    sources = [
+      host_tests_rspfile,
+    ]
+    args = [
+      "host_tests",
+      rebase_path(depfile, root_build_dir),
+      rebase_path(host_tests_rspfile, root_build_dir),
+    ]
+  }
+}
+
+public_targets = [
+  "bootloader",
+  "kernel",
+  "core",
+]
+
+testonly_public_targets = [
+  "bin",
+  "drivers",
+]
+
+# Each cpu is a target name for all the public targets for that CPU.
+foreach(cpu, standard_fuchsia_cpus) {
+  bootimage(cpu) {
+    testonly = true
+    cpu = cpu
+    deps = []
+    foreach(target, public_targets + testonly_public_targets) {
+      deps += [ "$zx/public/$target:$cpu" ]
+    }
+  }
+
+  # TODO(mcgrathr): Temporary hacks for integrating with the legacy Fuchsia
+  # GN build.
+  if (current_toolchain == default_toolchain) {
+    # This functions as the top-level target for integrating into the
+    # legacy Fuchsia GN build (what //scritps/build-zircon.sh builds)
+    # and also as the build API module used by the Fuchsia GN build's
+    # integration support (zircon_legacy in //build/config/fuchsia/zircon.gni).
+    build_api_module("legacy-$cpu") {
+      testonly = true
+      deps = [
+        ":ids-$cpu",
+        ":legacy-deps-$cpu",
+        ":manifest-$cpu",
+      ]
+      data_keys = [ "images" ]
+    }
+
+    group("legacy-deps-$cpu") {
+      testonly = true
+      deps = [
+        ":$cpu",
+        ":boards-$cpu",
+        "$zx/system/ulib:asan-manifest-$cpu",
+      ]
+    }
+
+    pkg_export("manifest-$cpu") {
+      testonly = true
+      data_keys = [ "pkg_export_manifest" ]
+      deps = [
+        ":$cpu",
+        ":tools",
+        ":ulib-$cpu",
+
+        # Separately listed because they're reached by dependencies only on x64.
+        "$zx/system/banjo/ddk-protocol-acpi",
+        "$zx/system/banjo/ddk-protocol-intelgpucore",
+        "$zx/system/banjo/ddk-protocol-intelhda-codec",
+        "$zx/system/banjo/ddk-protocol-intelhda-dsp",
+      ]
+    }
+
+    generated_file("boards-$cpu") {
+      testonly = true
+      outputs = [
+        "$root_build_dir/export/$target_name.list",
+      ]
+      output_conversion = "list lines"
+      data_keys = [ "sdk_board_list" ]
+      deps = [
+        ":$cpu",
+      ]
+    }
+  }
+
+  select_toolchain("ulib-$cpu") {
+    testonly = true
+    cpu = cpu
+    environment_label = "$zx/public/gn/toolchain:user"
+    deps = [
+      "$zx/system/ulib",
+    ]
+  }
+}
+
+# TODO(TC-303): ids.txt is deprecated and will be removed.
+if (current_toolchain == default_toolchain) {
+  action("ids.txt") {
+    testonly = true
+    outputs = [
+      "$root_build_dir/ids.txt",
+    ]
+    deps = []
+    sources = []
+    foreach(cpu, standard_fuchsia_cpus) {
+      deps += [ ":ids-$cpu" ]
+      sources += [ "$root_build_dir/ids-$cpu.txt" ]
+    }
+    script = "/usr/bin/sort"
+    args = [
+             "-u",
+             "-o",
+           ] + rebase_path(outputs + sources, root_build_dir)
+  }
+
+  foreach(cpu, standard_fuchsia_cpus) {
+    select_toolchain("ids-$cpu") {
+      testonly = true
+      cpu = cpu
+      environment_label = "$zx/public/gn/toolchain:user"
+      deps = [
+        ":ids-$cpu.txt",
+      ]
+    }
+  }
+} else if (toolchain.environment == "user") {
+  generated_file("elf-$current_cpu.list") {
+    testonly = true
+    outputs = [
+      "$root_build_dir/elf-$current_cpu.list",
+    ]
+    deps = [
+      ":legacy-deps-$current_cpu($default_toolchain)",
+    ]
+    data_keys = [ "elf_link_output" ]
+  }
+
+  toolchain_utils_action("ids-$current_cpu.txt") {
+    testonly = true
+    deps = [
+      ":elf-$current_cpu.list",
+    ]
+    outputs = [
+      "$root_build_dir/$target_name",
+    ]
+    sources = [
+      "$root_build_dir/elf-$current_cpu.list",
+    ]
+    depfile = "${outputs[0]}.d"
+    script = "scripts/gen-ids-file"
+    utils = [ "readelf" ]
+    args = rebase_path(outputs + [ depfile ] + sources, root_build_dir)
+  }
+}
+
+# Each public target is a target name for all the CPUs for that target.
+foreach(target, public_targets + testonly_public_targets) {
+  group(target) {
+    testonly = public_targets + [ target ] - [ target ] == public_targets
+    deps = []
+    foreach(cpu, standard_fuchsia_cpus) {
+      deps += [ "$zx/public/$target:$cpu" ]
+    }
+  }
+}
+
+group("all-cpu") {
+  testonly = true
+  deps = []
+  foreach(cpu, standard_fuchsia_cpus) {
+    deps += [ ":$cpu" ]
+  }
 }
 
 group("default") {
   testonly = true
   deps = [
+    ":all-cpu",
     ":tools",
   ]
+}
+
+# TODO: example
+
+foreach(cpu, standard_fuchsia_cpus) {
+  bootimage("core-tests-$cpu") {
+    testonly = true
+    cpu = cpu
+    deps = [
+      "$zx/public/kernel",
+      "$zx/system/utest:core-tests",
+    ]
+  }
+}
+
+bootimage("sherlock-zedboot") {
+  cpu = "arm64"
+  deps = [
+    ":zedboot",
+    "$zx/system/dev/board/sherlock",
+  ]
+}
+
+if (current_cpu != "") {
+  group("zedboot") {
+    deps = [
+      "$zx/public/core",
+      # TODO: some group() of useful diag/debug tools
+    ]
+    metadata = {
+      devmgr_config = [ "netsvc.netboot=true" ]
+    }
+  }
+
+  group("recovery") {
+    deps = [
+      "$zx/public/core",
+      # TODO: some group() of useful diag/recovery tools
+    ]
+  }
+}
+
+if (current_toolchain == default_toolchain) {
+  build_api_module("api") {
+    testonly = true
+    deps = [
+      "system/utest:host_tests",
+    ]
+    data_keys = [ "build_api_modules" ]
+  }
 }

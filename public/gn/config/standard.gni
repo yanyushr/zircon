@@ -2,6 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# All the $current_cpu values that `current_os == "fuchsia"` supports.
+standard_fuchsia_cpus = [
+  "arm64",
+  "x64",
+]
+
 # All the {cpu, os} combinations supported as build or SDK hosts.  The
 # build will define toolchains for all of these.  Successful
 # cross-compilation may require that a sysroot be installed and configured.
@@ -34,6 +40,7 @@ if (host_os == "mac") {
 standard_configs = [
   "$zx/public/gn/config:compiler",
   "$zx/public/gn/config:language",
+  "$zx/public/gn/config:machine",
   "$zx/public/gn/config:relative_paths",
   "$zx/public/gn/config:assert_level",
   "$zx/public/gn/config:opt_level",
@@ -48,6 +55,68 @@ standard_configs = [
   "$zx/public/gn/config:thread_safety_annotations",
 
   # TODO: "$zx/public/gn/config:symbol_visibility_hidden",
+
+  {
+    # Additional configs apply only to code built into shared libraries.
+    # This means everything in a ${toolchain.shlib} toolchain, not just code
+    # directly in the `sources` of a shared_library() or library() target.
+    shlib = true
+    add = [
+      "$zx/public/gn/config:shared_library_config",
+      "$zx/public/gn/config:no_undefined_symbols",
+    ]
+  },
+]
+
+# Additional configs apply to code built for Fuchsia but not to host code.
+standard_fuchsia_configs = [
+  "$zx/public/gn/config:nostdlib",
+  "$zx/public/gn/config:werror",
+]
+
+# Additional configs apply to normal userland Fuchsia code.
+standard_fuchsia_user_configs = [
+  "$zx/public/gn/config:user",
+  {
+    types = [ "host_tool" ]
+    add = [ "$zx/system/ulib/fdio" ]
+  },
+  {
+    # The "driver_config" target represents the execution environment into
+    # which driver modules get loaded.  This represents the vanilla (or
+    # configured) environment.  Variants can remove this and add a
+    # different variant driver_config label that represents the execution
+    # environment those drivers should get.
+    types = [ "driver" ]
+    add = [ "$zx/system/core/devmgr:driver_config" ]
+  },
+]
+
+# See define_environment().  These are the environments that are
+# vanilla bases to make derived environments from.
+standard_environments = [
+  {
+    name = "host"
+    targets = standard_build_hosts
+    globals = {
+      is_host = true
+    }
+    strip = true
+  },
+  {
+    name = "user"
+    targets = []
+    foreach(cpu, standard_fuchsia_cpus) {
+      targets += [
+        {
+          cpu = cpu
+        },
+      ]
+    }
+    configs = standard_fuchsia_configs + standard_fuchsia_user_configs
+    shlib = true
+    strip = "--strip-sections"
+  },
 ]
 
 # This list has the same structure as $variants but it just supplies
@@ -69,6 +138,76 @@ standard_variants = [
       }
     }
   },
+  {
+    variant = {
+      name = "lto"
+      configs = [ "$zx/public/gn/config/lto" ]
+    }
+  },
+  {
+    variant = {
+      name = "thinlto"
+      configs = [ "$zx/public/gn/config/lto:thinlto" ]
+    }
+  },
+  {
+    variant = {
+      name = "profile"
+      configs = [ "$zx/public/gn/config/instrumentation:profile" ]
+      tags = [
+        "instrumented",
+        "useronly",
+      ]
+    }
+  },
+  {
+    variant = {
+      name = "asan"
+      configs = [
+        "$zx/public/gn/config/instrumentation:asan",
+        {
+          types = [
+            "executable",
+            "host_tool",
+            "test",
+          ]
+          add = [ "$zx/public/gn/config/instrumentation:asan_default_options" ]
+        },
+        {
+          # ASan drivers need to live in an ASan-compatible environment.
+          types = [ "driver" ]
+          remove = [ "$zx/system/core/devmgr:driver_config" ]
+          add = [ "$zx/system/core/devmgr:driver_config.$name" ]
+        },
+      ]
+      toolchain_vars = {
+        libprefix = "asan/"
+      }
+      tags = [
+        "instrumented",
+        "useronly",
+      ]
+    }
+  },
+  {
+    variant = {
+      name = "ubsan"
+      configs = [ "$zx/public/gn/config/instrumentation:ubsan" ]
+      tags = [
+        "instrumented",
+        "useronly",
+      ]
+    }
+  },
+  {
+    variant = {
+      name = "asan-ubsan"
+      bases = [
+        "asan",
+        "ubsan",
+      ]
+    }
+  },
 ]
 
 # This list is appended to the $variants list for the build.  It provides
@@ -76,7 +215,19 @@ standard_variants = [
 # selector must be compatible with all environments used in select_toolchain(),
 default_variants = [
   {
+    # The EFI toolchain is only supported using Clang.
+    # For host default to Clang.
+    environment = [
+      "efi",
+      "host",
+    ]
     variant = "clang"
+  },
+  {
+    variant = "clang"
+  },
+  {
+    variant = "gcc"
   },
 ]
 
@@ -88,6 +239,24 @@ variant_shorthands = [
       {
         variant = "gcc"
         host = true
+      },
+    ]
+  },
+  {
+    name = "host_asan"
+    selectors = [
+      {
+        variant = "asan"
+        host = true
+      },
+    ]
+  },
+  {
+    name = "asan_drivers"
+    selectors = [
+      {
+        variant = "asan"
+        target_type = [ "driver" ]
       },
     ]
   },

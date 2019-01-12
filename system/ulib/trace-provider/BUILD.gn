@@ -1,0 +1,55 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+library("trace-provider") {
+  sdk = "static"
+  sdk_headers = [
+    "trace-provider/fdio_connect.h",
+    "trace-provider/handler.h",
+    "trace-provider/provider.h",
+  ]
+  sources = [
+    "fdio_connect.cpp",
+    "provider_impl.cpp",
+    "provider_with_fdio.cpp",
+    "session.cpp",
+    "trace_provider.fidl.client.cpp",
+    "trace_provider.fidl.h",
+    "trace_provider.fidl.tables.cpp",
+    "utils.cpp",
+  ]
+  configs += [ "$zx/public/gn/config:visibility_hidden" ]
+  deps = [
+    ":trace-handler",
+    "$zx/system/fidl/fuchsia-tracelink:c.headers",
+    "$zx/system/ulib/async",
+    "$zx/system/ulib/async:async-cpp",
+    "$zx/system/ulib/fbl",
+    "$zx/system/ulib/fdio",
+    "$zx/system/ulib/fidl",
+    "$zx/system/ulib/trace-engine",
+    "$zx/system/ulib/zircon",
+    "$zx/system/ulib/zircon-internal",
+    "$zx/system/ulib/zx",
+  ]
+}
+
+# For apps that use the trace engine, but not via a trace provider.
+# These are usually test and benchmarking apps.
+# Normal apps are not expected to use this.
+library("trace-handler") {
+  sdk = "static"
+  sdk_headers = []
+  sources = [
+    "handler.cpp",
+  ]
+  configs += [ "$zx/public/gn/config:visibility_hidden" ]
+  deps = [
+    "$zx/system/ulib/async",
+    "$zx/system/ulib/async:async-cpp",
+    "$zx/system/ulib/fbl",
+    "$zx/system/ulib/trace-engine",
+    "$zx/system/ulib/zircon",
+  ]
+}

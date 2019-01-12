@@ -1,0 +1,74 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+library("async") {
+  sdk = "source"
+  sdk_headers = []
+  foreach(file,
+          [
+            "dispatcher.h",
+            "exception.h",
+            "receiver.h",
+            "task.h",
+            "time.h",
+            "trap.h",
+            "wait.h",
+          ]) {
+    sdk_headers += [ "lib/async/$file" ]
+  }
+  sources = [
+    "ops.c",
+  ]
+  configs += [ "$zx/public/gn/config:visibility_hidden" ]
+  deps = [
+    "$zx/system/ulib/zircon",
+  ]
+}
+
+library("async-cpp") {
+  sdk = "source"
+  sdk_headers = []
+  foreach(file,
+          [
+            "cpp/exception.h",
+            "cpp/receiver.h",
+            "cpp/task.h",
+            "cpp/time.h",
+            "cpp/trap.h",
+            "cpp/wait.h",
+          ]) {
+    sdk_headers += [ "lib/async/$file" ]
+  }
+  public_deps = [
+    # <lib/async/cpp/task.h> has #include <lib/zx/time.h>.
+    "$zx/system/ulib/zx:headers",
+
+    # <lib/async/cpp/task.h> has #include <fbl/function.h>.
+    "$zx/system/ulib/fbl:headers",
+  ]
+  sources = [
+    "exception.cpp",
+    "receiver.cpp",
+    "task.cpp",
+    "trap.cpp",
+    "wait.cpp",
+  ]
+  configs += [ "$zx/public/gn/config:visibility_hidden" ]
+  deps = [
+    ":async",
+    "$zx/system/ulib/fbl",
+    "$zx/system/ulib/zircon",
+    "$zx/system/ulib/zx",
+  ]
+}
+
+library("async-default") {
+  sdk = "shared"
+  sdk_headers = [ "lib/async/default.h" ]
+  shared = true
+  sources = [
+    "default.c",
+  ]
+  configs += [ "$zx/public/gn/config:visibility_hidden" ]
+}

@@ -1,0 +1,33 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+library("bitmap") {
+  sdk = "source"
+  sdk_headers = [
+    "bitmap/bitmap.h",
+    "bitmap/raw-bitmap.h",
+    "bitmap/rle-bitmap.h",
+    "bitmap/storage.h",
+  ]
+  kernel = true
+  host = true
+  static = true
+  sources = [
+    "raw-bitmap.cpp",
+    "rle-bitmap.cpp",
+  ]
+  public_deps = [
+    "$zx/system/ulib/fbl:headers",
+  ]
+  if (!is_kernel && !is_host) {
+    deps = [
+      "$zx/system/ulib/fbl",
+      "$zx/system/ulib/zircon",
+      "$zx/system/ulib/zx",
+      "$zx/system/ulib/zxcpp",
+    ]
+  }
+}

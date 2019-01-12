@@ -1,0 +1,201 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("$zx/public/gn/host_tool_action.gni")
+import("$zx/public/gn/pkg.gni")  # TODO: temporary hack
+
+template("banjo_library") {
+  assert(defined(invoker.sources),
+         "banjo_library(\"$target_name\") must set `sources`")
+
+  # The main target is an action that generates the headers.
+  # Its public_deps includes a config() target that makes them visible.
+  # banjo_library() targets use public_deps for dependencies between headers.
+  banjo_target = target_name
+  config_target = "${banjo_target}._config"
+
+  # The generated headers are the same in every toolchain, so generate only
+  # once, in $default_toolchain.
+  gen_dir = get_label_info(":$banjo_target($default_toolchain)",
+                           "target_gen_dir") + "/$banjo_target"
+
+  config(config_target) {
+    visibility = [ ":$banjo_target" ]
+    forward_variables_from(invoker, [ "testonly" ])
+    deps = [
+      ":$banjo_target._cflags.rsp($default_toolchain)",
+    ]
+    cflags = [ "@" + rebase_path("$gen_dir._cflags.rsp", root_build_dir) ]
+  }
+
+  if (current_toolchain == default_toolchain) {
+    # TODO(mcgrathr): temporary until everything is renamed with . names
+    banjo_library_name = string_replace(banjo_target, "-", ".")
+
+    banjo_path = string_replace(banjo_library_name, ".", "/")
+    banjo_name = string_replace(banjo_path, "ddk/protocol/", "")
+
+    pkg_export("${banjo_target}.pkg") {  # TODO: temporary hack
+      contents = [
+        "[package]",
+        "name=$banjo_target",
+        "library=$banjo_library_name",
+        "arch=banjo",
+        "type=banjo",
+        "[banjo]",
+      ]
+      foreach(file, invoker.sources) {
+        contents += [ "$file=SOURCE/" + rebase_path(file, "//") ]
+      }
+      if (defined(invoker.deps)) {
+        contents += [ "[banjo-deps]" ]
+        foreach(label, invoker.deps) {
+          contents += [ get_label_info(label, "name") + "=SOURCE/" +
+                        rebase_path(get_label_info(label, "dir"), "//") ]
+        }
+      }
+    }
+
+    gen_files = [
+      {
+        switch = "--ddk-header"
+        file = "$gen_dir/include/ddk/protocol/${banjo_name}.h"
+      },
+      {
+        switch = "--ddktl-header"
+        file = "$gen_dir/include/ddktl/protocol/${banjo_name}.h"
+      },
+      {
+        file = "$gen_dir/include/ddktl/protocol/${banjo_name}-internal.h"
+      },
+    ]
+    gen_args = [
+      "--name",
+      banjo_library_name,
+    ]
+    gen_outputs = []
+    foreach(gen, gen_files) {
+      gen_outputs += [ gen.file ]
+      if (defined(gen.switch)) {
+        gen_args += [
+          gen.switch,
+          rebase_path(gen.file, root_build_dir),
+        ]
+      }
+    }
+
+    # This just groups the dependencies together with the metadata listing
+    # the input files.
+    group("$banjo_target._files") {
+      visibility = [
+        ":$banjo_target._files.rsp",
+        ":$banjo_target._cflags.rsp",
+      ]
+      forward_variables_from(invoker,
+                             [
+                               "deps",
+                               "public_deps",
+                               "testonly",
+                             ])
+
+      # These inputs are needed both here and in every dependency
+      # banjo_library() action.
+      metadata = {
+        banjo_rspfile =
+            [ "--files" ] + rebase_path(invoker.sources, root_build_dir)
+        banjo_cflags =
+            [ "-I" + rebase_path("$gen_dir/include", root_build_dir) ]
+      }
+    }
+
+    # First produce a metadata response file from all the banjo_rspfile lists.
+    # TODO(get_metadata): banjo needs this to collect metadata in
+    # topological order, but it's a pruned pre-order instead
+    files_rspfile = "$target_gen_dir/$banjo_target._files.rsp"
+    generated_file("$banjo_target._files.rsp") {
+      forward_variables_from(invoker, [ "testonly" ])
+      visibility = [ ":$banjo_target._rsp" ]
+      deps = [
+        ":$banjo_target._files",
+      ]
+      outputs = [
+        files_rspfile,
+      ]
+      output_conversion = "list lines"
+      data_keys = [ "banjo_rspfile" ]
+    }
+
+    # Next, combine that into a response file for the whole command.
+    # At the same time, produce a depfile listing all the input files.
+    gen_rspfile = "$target_out_dir/$banjo_target.rsp"
+    gen_depfile = "$target_out_dir/$banjo_target.d"
+    action("$banjo_target._rsp") {
+      forward_variables_from(invoker, [ "testonly" ])
+      visibility = [ ":$banjo_target" ]
+      deps = [
+        ":$banjo_target._files.rsp",
+      ]
+      sources = [
+        files_rspfile,
+      ]
+      outputs = [
+        gen_rspfile,
+        gen_depfile,
+      ]
+      script = "$zx/public/gn/gen-fidlc-rsp.sh"
+      args = rebase_path(outputs + [ gen_outputs[0] ] + sources,
+                         root_build_dir) + gen_args
+    }
+
+    # Finally, the real action runs banjoc with that response file.
+    host_tool_action(banjo_target) {
+      forward_variables_from(invoker,
+                             [
+                               "public_deps",
+                               "testonly",
+                               "visibility",
+                             ])
+      if (!defined(public_deps)) {
+        public_deps = []
+      }
+      public_deps += [ ":$config_target" ]
+      deps = [
+        ":$banjo_target._rsp",
+      ]
+
+      tool = "$zx/system/host/banjo/compiler"
+      outputs = gen_outputs
+      sources = [
+        gen_rspfile,
+      ]
+      depfile = gen_depfile
+      args = [ "@" + rebase_path(gen_rspfile, root_build_dir) ]
+    }
+
+    # The config also needs this metadata response file containing -I switches.
+    generated_file("$banjo_target._cflags.rsp") {
+      visibility = [ ":$config_target" ]
+      deps = [
+        ":$banjo_target._files",
+      ]
+      outputs = [
+        "$gen_dir._cflags.rsp",
+      ]
+      output_conversion = "list lines"
+      data_keys = [ "banjo_cflags" ]
+    }
+  } else {
+    group(banjo_target) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      public_deps = [
+        ":$banjo_target($default_toolchain)",
+      ]
+      not_needed(invoker, "*")
+    }
+  }
+}

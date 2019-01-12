@@ -1,0 +1,114 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("abigen.gni")
+
+source_set("syscalls") {
+  sources = [
+    "channel.cpp",
+    "ddk.cpp",
+    "ddk_${zircon_cpu}.cpp",
+    "ddk_pci.cpp",
+    "debug.cpp",
+    "exceptions.cpp",
+    "fifo.cpp",
+    "futex.cpp",
+    "handle_ops.cpp",
+    "hypervisor.cpp",
+    "object.cpp",
+    "object_wait.cpp",
+    "pager.cpp",
+    "port.cpp",
+    "profile.cpp",
+    "resource.cpp",
+    "socket.cpp",
+    "system.cpp",
+    "system_${zircon_cpu}.cpp",
+    "task.cpp",
+    "test.cpp",
+    "timer.cpp",
+    "vmar.cpp",
+    "vmo.cpp",
+    "zircon.cpp",
+  ]
+  deps = [
+    ":dispatch",
+    ":syscall-abi",
+    "$zx/kernel/dev/udisplay",
+    "$zx/kernel/lib/console",
+    "$zx/kernel/lib/counters",
+    "$zx/kernel/lib/crypto",
+    "$zx/kernel/lib/fbl",
+    "$zx/kernel/lib/gfxconsole",
+    "$zx/kernel/lib/ktrace",
+    "$zx/kernel/lib/mtrace",
+    "$zx/kernel/lib/pci",
+    "$zx/kernel/lib/user_copy",
+    "$zx/kernel/object",
+    "$zx/system/ulib/explicit-memory",
+    "$zx/system/ulib/libzbi",
+    "$zx/system/ulib/region-alloc",
+  ]
+  if (current_cpu == "x64") {
+    deps += [ "$zx/kernel/platform/pc" ]
+  }
+}
+
+# Only this file depends on vdso-valid-sysret.h.
+source_set("dispatch") {
+  sources = [
+    "syscalls.cpp",
+  ]
+  deps = [
+    ":syscall-abi",
+    "$zx/kernel/lib/vdso:headers",
+  ]
+}
+
+config("syscall-abi") {
+  visibility = [
+    ":*",
+    "$zx/kernel/arch/$zircon_cpu:*",
+    "$zx/system/ulib/zircon:*",
+    "$zx/system/utest/core/bad-syscall:*",
+  ]
+
+  include_dirs = [ target_gen_dir ]
+
+  deps = [
+    ":generate-syscall-abi",
+  ]
+}
+
+abigen("generate-syscall-abi") {
+  visibility = [ ":syscall-abi" ]
+  gen = [
+    {
+      args = [ "-numbers" ]
+      outputs = [
+        "$target_gen_dir/zircon/zx-syscall-numbers.h",
+      ]
+    },
+    {
+      args = [ "-kernel-header" ]
+      outputs = [
+        "$target_gen_dir/zircon/syscall-definitions.h",
+      ]
+    },
+    {
+      args = [ "-kernel-wrappers" ]
+      outputs = [
+        "$target_gen_dir/zircon/syscall-kernel-wrappers.inc",
+      ]
+    },
+    {
+      args = [ "-kernel-branch" ]
+      outputs = [
+        "$target_gen_dir/zircon/syscall-kernel-branches.S",
+      ]
+    },
+  ]
+}

@@ -1,0 +1,27 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+library("inspect") {
+  sdk = "source"
+  sdk_headers = [
+    "lib/inspect/block.h",
+    "lib/inspect/heap.h",
+    "lib/inspect/limits.h",
+    "lib/inspect/scanner.h",
+    "lib/inspect/snapshot.h",
+  ]
+  sources = [
+    "heap.cpp",
+    "scanner.cpp",
+    "snapshot.cpp",
+  ]
+  deps = [
+    "$zx/public/gn/config:visibility_hidden",
+    "$zx/system/ulib/fbl",
+    "$zx/system/ulib/fzl",
+    "$zx/system/ulib/syslog",
+    "$zx/system/ulib/zx",
+    "$zx/system/ulib/zxcpp",
+  ]
+}

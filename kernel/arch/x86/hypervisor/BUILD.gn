@@ -1,0 +1,20 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+source_set("hypervisor") {
+  sources = [
+    "guest.cpp",
+    "pvclock.cpp",
+    "vcpu.cpp",
+    "vmexit.cpp",
+    "vmx.S",
+    "vmx_cpu_state.cpp",
+  ]
+  deps = [
+    "$zx/kernel/platform/pc",
+    "$zx/system/ulib/explicit-memory",
+  ]
+}

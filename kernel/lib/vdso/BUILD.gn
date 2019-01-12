@@ -1,0 +1,115 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("$zx/kernel/syscalls/abigen.gni")
+import("$zx/public/gn/toolchain/select_toolchain.gni")
+import("rodso.gni")
+
+library("vdso") {
+  kernel = true
+  sources = [
+    "vdso-image.S",
+    "vdso.cpp",
+  ]
+
+  # vdso-image.S includes the vDSO (aka libzircon.so) contents and so must
+  # be reassembled when that changes.  But listing $zx/system/ulib/zircon
+  # in deps here will make GN try to link libzircon.so into the kernel.
+  # Fortunately, vdso-image.S also includes the "vdso-code.h" header file
+  # and normal depfile magic will discover that.  This header file is
+  # generated (below) from libzircon.so itself, so it will always be
+  # touched when libzircon.so has been touched and thus ensure vdso-image.S
+  # is reassembled with the new vDSO contents.
+  if (is_kernel) {
+    deps = [
+      ":gen-categories",
+      ":rodso",
+      ":vdso-code-header",
+      "$zx/kernel/lib/version:config-buildid-header",
+      "$zx/kernel/syscalls",
+      "$zx/system/ulib/fbl",
+    ]
+    public_deps = [
+      ":vdso-valid-sysret",
+
+      # <lib/rodso.h> has #include <object/handle.h>.
+      "$zx/kernel/object",
+    ]
+  }
+}
+
+source_set("rodso") {
+  sources = [
+    "rodso.cpp",
+  ]
+  deps = [
+    ":headers",
+  ]
+}
+
+config("vdso-valid-sysret") {
+  include_dirs = [ target_gen_dir ]
+  deps = [
+    ":gen-vdso-valid-sysret",
+  ]
+}
+
+action("gen-vdso-valid-sysret") {
+  visibility = [ ":*" ]
+
+  # TODO(mcgrathr): Move the script to this dir.
+  script = "$zx/scripts/gen-vdso-valid-sysret.sh"
+  sources = [
+    "$target_gen_dir/vdso-code.h",
+  ]
+  outputs = [
+    "$target_gen_dir/vdso-valid-sysret.h",
+  ]
+  args = rebase_path(sources + outputs)
+  deps = [
+    ":gen-vdso-code-header",
+  ]
+}
+
+# Redirect to the userland vDSO shared library target.
+select_toolchain("userland") {
+  environment_label = "$zx/public/gn/toolchain:user"
+  deps = [
+    "$zx/system/ulib/zircon",
+  ]
+}
+
+config("vdso-code-header") {
+  include_dirs = [ target_gen_dir ]
+  deps = [
+    ":gen-vdso-code-header",
+  ]
+}
+
+# This generated header file tells the vdso.cpp code
+# where the segment boundaries and entry points are.
+rodso_code_header("gen-vdso-code-header") {
+  visibility = [ ":*" ]
+  name = "VDSO"
+  outputs = [
+    "$target_gen_dir/vdso-code.h",
+  ]
+  deps = [
+    ":userland",
+  ]
+}
+
+abigen("gen-categories") {
+  visibility = [ ":*" ]
+  gen = [
+    {
+      args = [ "-category" ]
+      outputs = [
+        "$target_gen_dir/zircon/syscall-category.inc",
+      ]
+    },
+  ]
+}

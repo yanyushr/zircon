@@ -1,0 +1,22 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+library("hwreg") {
+  sdk = "source"
+  sdk_headers = [
+    "hwreg/bitfields.h",
+    "hwreg/internal.h",
+    "hwreg/mmio.h",
+  ]
+  kernel = true
+  static = true
+  sources = [
+    "printers.cpp",
+  ]
+  deps = [
+    "$zx/kernel/lib/fbl",
+  ]
+}

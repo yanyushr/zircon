@@ -1,0 +1,203 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("$zx/public/gn/build_api.gni")
+import("$zx/public/gn/config/standard.gni")
+import("$zx/public/gn/toolchain/select_toolchain.gni")
+import("$zx/public/gn/zbi.gni")
+
+if (current_cpu != "") {
+  group("utest") {
+    testonly = true
+
+    deps = [
+      ":host",  # TODO(mcgrathr): reach this differently?
+      "$zx/system/core/bootsvc:bootsvc-tests",
+      "$zx/system/core/virtcon:virtual-console-test",
+      "$zx/system/dev/block/ftl/test",
+      "$zx/system/dev/block/fvm/test",
+      "$zx/system/dev/input/bma253:bma253-test",
+      "$zx/system/dev/lib/usb:usb-wrapper-test",
+      "$zx/system/dev/nand/broker:nand",
+      "$zx/system/dev/nand/nandpart:nandpart-test",
+      "$zx/system/dev/nand/ram-nand:ram-nand-test",
+      "$zx/system/dev/nand/skip-block:skip-block-test",
+      "$zx/system/uapp/disk-pave:install-disk-image-test",
+      "$zx/system/ulib/inspect/test",
+      "$zx/system/ulib/kvstore:kvstore-test",
+      "$zx/system/ulib/pretty:pretty-test",
+      "$zx/system/ulib/simplehid/test",
+      "$zx/system/ulib/tftp:tftp-test",
+      "$zx/system/ulib/zxtest/test",
+      "abigen",
+      "async",
+      "async-loop",
+      "async-testutils",
+      "biotime",
+      "bitmap",
+      "blobfs",
+      "blobfs-bench",
+      "camera",
+      "channel-fatal",
+      "chromeos-disk-setup",
+      "cleanup",
+      "cobalt-client",
+      "compiler",
+      "core",
+      "cprng",
+      "crypto",
+      "ctor",
+      "debugger",
+      "devfs",
+      "digest",
+      "dlfcn",
+      "dlopen-indirect-deps",
+      "driver-tests",
+      "dump1",
+      "elf-search",
+      "entropy",
+      "errno",
+      "ethernet",
+      "events",
+      "evil",
+      "exception",
+      "exit",
+      "fbl",
+      "fdio",
+      "fidl",
+      "fidl-simple",
+      "fpu",
+      "fs",
+      "fs-bench",
+      "fs-management",
+      "fs-test-utils",
+      "fs-vnode",
+      "fuzz-utils",
+      "fvm",
+      "fzl",
+      "getentropy",
+      "handle-alias",
+      "hid-parser",
+      "hypervisor",
+      "int-types",
+      "kernel-unittests",
+      "launchpad",
+      "libfzl",
+      "libgpt",
+      "libhwreg",
+      "libzx",
+      "logger",
+      "memfs",
+      "msd",
+      "namespace",
+      "perftest",
+      "policy",
+      "posixio",
+      "processor",
+      "property",
+      "pty",
+      "qsort",
+      "race-tests",
+      "ramdisk",
+      "region-alloc",
+      "register-state",
+      "rtc-lib",
+      "runtests-utils",
+      "sanitizer",
+      "spawn",
+      "stdio",
+      "sysconf",
+      "sysinfo",
+      "syslog",
+      "task-utils",
+      "thread-initial-state",
+      "thread-state",
+      "time",
+      "timers",
+      "trace",
+      "trace-reader",
+      "usb",
+      "utf_conversion",
+      "util",
+      "vdso",
+      "vdso-base",
+      "vdso-variant",
+      "vmo",
+      "zbi",
+      "zxcrypt",
+      "zxio",
+      "zxs",
+
+      # disabled for now:
+      #"bad-kernel-access",
+
+      # TODO(fuzztest): "edid"
+    ]
+    if (current_cpu == "x64") {
+      deps += [ "x86-umip" ]
+    }
+  }
+
+  # This plus a kernel in deps makes a zbi() that's just for running core-tests.
+  zbi_input("core-tests") {
+    testonly = true
+    type = "cmdline"
+    args = [ "--entry=userboot=bin/core-tests" ]
+    deps = [
+      "$zx/system/utest/core:core-tests",
+    ]
+  }
+
+  group("host-tests") {
+    testonly = true
+    deps = [
+      "banjo-compiler",
+      "fbl",
+      "fidl-compiler",
+      "fit",
+      "fs-host",
+      "fvm-host",
+      "runtests-utils",
+      "trace-reader",
+      "util",
+      "zbi",
+    ]
+  }
+}
+
+# Build the host tests for each host.
+foreach(host, standard_build_hosts) {
+  select_toolchain("host-tests-${host.os}-${host.cpu}") {
+    testonly = true
+    environment_label = "$zx/public/gn/toolchain:host"
+    cpu = host.cpu
+    os = host.os
+    deps = [
+      ":host-tests",
+    ]
+  }
+}
+
+group("host-tests-all-platforms") {
+  testonly = true
+  deps = []
+  foreach(host, standard_build_hosts) {
+    deps += [ ":host-tests-${host.os}-${host.cpu}" ]
+  }
+}
+
+group("host") {
+  testonly = true
+  deps = [
+    ":host-tests-${host_os}-${host_cpu}",
+  ]
+}
+
+build_api_module("host_tests") {
+  testonly = true
+  deps = [
+    ":host-tests-all-platforms",
+  ]
+  data_keys = [ "test_spec" ]
+}

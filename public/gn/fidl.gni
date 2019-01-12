@@ -1,0 +1,266 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("$zx/public/gn/host_tool_action.gni")
+import("$zx/public/gn/pkg.gni")  # TODO: temporary hack
+
+_fidl_generators = [
+  {
+    name = "c"
+    files = [
+      {
+        switch = "--c-header"
+        path_prefix = "include/"
+        path_suffix = "/c/fidl.h"
+      },
+      {
+        switch = "--c-client"
+        path = "client.c"
+      },
+      {
+        switch = "--c-server"
+        path = "server.c"
+      },
+      {
+        switch = "--tables"
+        path = "tables.cpp"
+      },
+    ]
+    target = "_fidl_c_library"
+    subtargets = [
+      "headers",
+      "static",
+    ]
+  },
+]
+
+template("fidl_library") {
+  assert(defined(invoker.sources),
+         "fidl_library(\"$target_name\") must set `sources`")
+
+  fidl_target = target_name
+
+  # TODO(mcgrathr): temporary until everything is renamed with . names
+  fidl_name = string_replace(fidl_target, "-", ".")
+  fidl_path = string_replace(fidl_name, ".", "/")
+  if (defined(invoker.deps)) {
+    fidl_deps = invoker.deps
+  } else {
+    fidl_deps = []
+  }
+
+  pkg_export("${fidl_target}.pkg") {  # TODO: temporary hack
+    contents = [
+      "[package]",
+      "name=$fidl_target",
+      "library=$fidl_name",
+      "arch=fidl",
+      "type=fidl",
+      "[fidl]",
+    ]
+    foreach(file, invoker.sources) {
+      contents += [ "$file=SOURCE/" + rebase_path(file, "//") ]
+    }
+    if (defined(invoker.deps)) {
+      contents += [ "[fidl-deps]" ]
+      foreach(label, invoker.deps) {
+        contents += [ get_label_info(label, "name") + "=SOURCE/" +
+                      rebase_path(get_label_info(label, "dir"), "//") ]
+      }
+    }
+  }
+
+  # The generated sources are the same in every toolchain, so generate only
+  # once, in $default_toolchain.  The same sources will be separately
+  # compiled in each toolchain that uses the bindings library.
+  _fidl_gen_dir = get_label_info(":$fidl_target($default_toolchain)",
+                                 "target_gen_dir") + "/$fidl_target"
+  group(fidl_target) {
+    forward_variables_from(invoker,
+                           [
+                             "deps",
+                             "testonly",
+                             "visibility",
+                           ])
+    metadata = {
+      fidl_inputs = invoker.sources
+      fidl_input_args =
+          [ "--files" ] + rebase_path(invoker.sources, root_build_dir)
+
+      fidl_c_include_dirs = [ "$_fidl_gen_dir/include" ]
+    }
+    data_deps = [
+      ":$fidl_target.pkg",
+    ]
+  }
+
+  template("_fidl_c_library") {
+    gen = invoker.gen
+    gen_target = "${invoker.fidl_target}._generate.${gen.name}"
+    library(target_name) {
+      forward_variables_from(invoker, "*", [ "deps" ])
+      deps = invoker.deps
+
+      # Users of the bindings library need the generated headers.
+      public_deps = [
+        ":${target_name}_config",
+      ]
+
+      # The generated headers of a dependent fidl_library() will #include the
+      # generated headers for its dependencies' bindings libraries.
+      #
+      # TODO(get_metadata): This presumes all deps are direct
+      # fidl_library() deps.  Instead, just include deps' bindings header
+      # dirs in include_dirs below via metadata.
+      foreach(dep, fidl_deps) {
+        public_deps += [ "$dep:c.headers" ]
+      }
+
+      # The generated code uses these.
+      deps += [
+        "$zx/system/ulib/fidl",
+        "$zx/system/ulib/zircon",
+      ]
+    }
+    config("${target_name}_config") {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      include_dirs = [
+        "$_fidl_gen_dir/include",
+        # The generated headers of a dependent fidl_library() will #include the
+        # generated headers for its dependencies' bindings libraries.
+        # TODO(get_metadata): get_metadata("", [ "fidl_c_include_dirs" ]),
+      ]
+      deps = [
+        ":$gen_target($default_toolchain)",
+      ]
+    }
+  }
+
+  if (current_toolchain == default_toolchain) {
+    foreach(gen, _fidl_generators) {
+      gen_target = "${fidl_target}._generate.${gen.name}"
+      gen_outputs = []
+      gen_args = [
+        "--name",
+        fidl_name,
+      ]
+      foreach(file, gen.files) {
+        gen_args += [ file.switch ]
+        if (defined(file.path)) {
+          file = file.path
+        } else {
+          file = "${file.path_prefix}${fidl_path}${file.path_suffix}"
+        }
+        gen_outputs += [ "$_fidl_gen_dir/$file" ]
+        gen_args += [ rebase_path("$_fidl_gen_dir/$file", root_build_dir) ]
+      }
+
+      host_tool_action(gen_target) {
+        forward_variables_from(invoker, [ "testonly" ])
+        visibility = [ ":*" ]
+        deps = [
+          ":$fidl_target",
+        ]
+        tool = "$zx/system/host/fidl:fidlc"
+        outputs = gen_outputs
+        if (false) {  # TODO(get_metadata)
+          sources = [
+            # This is not "" so it doesn't get the host_tool_action() tool dep.
+            get_metadata(deps, [ "fidl_inputs" ]),
+          ]
+          args = gen_args + [ get_metadata(deps, [ "fidl_input_args" ]) ]
+        } else {
+          # TODO(get_metadata): horrible hack, uses action below
+          sources = [
+            "$_fidl_gen_dir/${gen_target}.rsp",
+          ]
+          deps += [ ":${gen_target}.rsp" ]
+          args = [ "@" + rebase_path(sources[0], root_build_dir) ]
+        }
+      }
+    }
+
+    # TODO(get_metadata): horrible hack, used above
+    _fidl_rsp = []
+    foreach(dep, fidl_deps) {
+      dep_name = get_label_info(dep, "name")
+      dep_gen_dir = get_label_info(dep, "target_gen_dir") + "/$dep_name"
+      _fidl_rsp += [ "@" + rebase_path("${dep_gen_dir}/${dep_name}.rsp",
+                                       root_build_dir) ]
+    }
+    _fidl_rsp += [ "--files" ] + rebase_path(invoker.sources, root_build_dir)
+    write_file("$_fidl_gen_dir/${fidl_target}.rsp", _fidl_rsp, "list lines")
+    action("${gen_target}.rsp") {
+      visibility = [ ":$gen_target" ]
+      sources = [
+        "$_fidl_gen_dir/${fidl_target}.rsp",
+      ]
+      outputs = [
+        "$_fidl_gen_dir/${gen_target}.rsp",
+      ]
+      depfile = "${outputs[0]}.d"
+      script = "$zx/public/gn/fidl-expand-rsp.sh"
+      args = rebase_path(outputs + [ depfile ], root_build_dir) + gen_args +
+             [ "@" + rebase_path(sources[0], root_build_dir) ]
+    }
+  } else {
+    foreach(gen, _fidl_generators) {
+      gen_target = "${fidl_target}._generate.${gen.name}"
+      target(gen.target, "${fidl_target}.${gen.name}") {
+        forward_variables_from(invoker,
+                               [
+                                 "testonly",
+                                 "visibility",
+                               ])
+        deps = [
+          ":$gen_target($default_toolchain)",
+        ]
+        sources = []
+        foreach(file, gen.files) {
+          if (defined(file.path)) {
+            file = file.path
+          } else {
+            file = "${file.path_prefix}${fidl_path}${file.path_suffix}"
+          }
+          sources += [ "$_fidl_gen_dir/$file" ]
+        }
+      }
+
+      # If this fidl_library() is the main target for the directory, then give
+      # its bindings targets `dir:dir.lang` aliases `dir:lang`.  For
+      # `dir:dir.c` that also means `dir:dir.c.headers` gets `dir:c.headers`.
+      if (get_label_info(":$fidl_target", "name") ==
+          get_path_info(get_label_info(":$fidl_target", "dir"), "file")) {
+        group(gen.name) {
+          forward_variables_from(invoker,
+                                 [
+                                   "testonly",
+                                   "visibility",
+                                 ])
+          public_deps = [
+            ":${fidl_target}.${gen.name}",
+          ]
+        }
+        if (defined(gen.subtargets)) {
+          foreach(subtarget, gen.subtargets) {
+            group("${gen.name}.${subtarget}") {
+              forward_variables_from(invoker,
+                                     [
+                                       "testonly",
+                                       "visibility",
+                                     ])
+              public_deps = [
+                ":${fidl_target}.${gen.name}.${subtarget}",
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+declare_args() {
+  # Version string embedded in the kernel for `zx_system_get_version`.
+  # If set to the default "", a string is generated based on the
+  # Zircon git revision of the checkout.
+  kernel_version_string = ""
+}
+
+# The version string depends solely on the source and doesn't vary across
+# machines or toolchains, so generate it only once.
+if (current_toolchain == default_toolchain) {
+  action("gen-config-buildid-header") {
+    visibility = [ ":*" ]
+    outputs = [
+      "$target_gen_dir/config-buildid.h",
+    ]
+    if (kernel_version_string != "") {
+      script = "/usr/bin/touch"
+    } else {
+      sources = [
+        "$zx/.git/HEAD",
+        "$zx/.git/index",
+      ]
+      script = "buildid.sh"
+    }
+    args = rebase_path(outputs, root_build_dir)
+  }
+} else {
+  library("version") {
+    kernel = true
+    sources = [
+      "version.cpp",
+    ]
+    defines = [
+      "ARCH=\"$zircon_cpu\"",
+      "PROJECT=\"$current_cpu\"",
+      "PLATFORM=\"XXX\"",
+      "TARGET=\"XXX\"",
+    ]
+    deps = [
+      ":config-buildid-header",
+      "$zx/kernel/lib/console",
+    ]
+  }
+
+  config("config-buildid-header") {
+    if (kernel_version_string != "") {
+      defines = [ "BUILDID='\"$kernel_version_string\"'" ]
+    } else {
+      deps = [
+        ":gen-config-buildid-header($default_toolchain)",
+      ]
+      include_dirs = [ get_label_info(deps[0], "target_gen_dir") ]
+    }
+  }
+}

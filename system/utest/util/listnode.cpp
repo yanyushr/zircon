@@ -168,9 +168,6 @@ RUN_TEST(element_add_remove);
 RUN_TEST(list_splice_split);
 END_TEST_CASE(listnode_tests)
 
-#ifndef BUILD_COMBINED_TESTS
 int main(int argc, char** argv) {
-    bool success = unittest_run_all_tests(argc, argv);
-    return success ? 0 : -1;
+    return unittest_run_all_tests(argc, argv) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-#endif  // BUILD_COMBINED_TESTS

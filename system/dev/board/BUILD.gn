@@ -1,0 +1,32 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("board") {
+  deps = [
+    "machina",
+    "qemu",
+    "test",
+  ]
+  if (current_cpu == "arm64") {
+    deps += [
+      "astro",
+      "gauss",
+      "hikey960",
+      "imx8mevk",
+      "imx8mmevk",
+      "mt8167s_ref",
+      "sherlock",
+      "vim",
+    ]
+    metadata = {
+      sdk_board_list = [
+        "gauss",
+        "hikey960",
+        "qemu",
+        "vim2",
+        "imx8mevk",
+      ]
+    }
+  }
+}

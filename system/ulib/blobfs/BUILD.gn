@@ -1,0 +1,68 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+library("blobfs") {
+  host = true
+  sources = [
+    "common.cpp",
+    "extent-reserver.cpp",
+    "fsck.cpp",
+    "iterator/allocated-extent-iterator.cpp",
+    "iterator/block-iterator.cpp",
+    "iterator/vector-extent-iterator.cpp",
+    "lz4.cpp",
+    "node-reserver.cpp",
+  ]
+  if (is_fuchsia) {
+    sources += [
+      "allocator.cpp",
+      "blob-cache.cpp",
+      "blob.cpp",
+      "blobfs.cpp",
+      "cache-node.cpp",
+      "directory.cpp",
+      "iterator/node-populator.cpp",
+      "journal.cpp",
+      "metrics.cpp",
+      "writeback.cpp",
+    ]
+  } else {
+    sources += [ "host.cpp" ]
+  }
+  public_deps = [
+    "$zx/system/ulib/bitmap:headers",
+    "$zx/system/ulib/fs:headers",
+  ]
+  if (is_fuchsia) {
+    public_deps += [ "$zx/system/ulib/block-client:headers" ]
+  }
+  deps = [
+    "$zx/system/ulib/bitmap",
+    "$zx/system/ulib/digest",
+    "$zx/system/ulib/fbl",
+    "$zx/system/ulib/fdio:headers",
+    "$zx/third_party/ulib/cksum",
+    "$zx/third_party/ulib/lz4",
+    "$zx/third_party/ulib/uboringssl",
+  ]
+  if (is_fuchsia) {
+    deps += [
+      "$zx/system/ulib/async",
+      "$zx/system/ulib/async:async-cpp",
+      "$zx/system/ulib/async:async-default",
+      "$zx/system/ulib/async-loop",
+      "$zx/system/ulib/async-loop:async-loop-cpp",
+      "$zx/system/ulib/block-client",
+      "$zx/system/ulib/c",
+      "$zx/system/ulib/fdio",
+      "$zx/system/ulib/fzl",
+      "$zx/system/ulib/sync",
+      "$zx/system/ulib/trace",
+      "$zx/system/ulib/trace-engine",
+      "$zx/system/ulib/zircon",
+      "$zx/system/ulib/zx",
+      "$zx/system/ulib/zxcpp",
+    ]
+  }
+}

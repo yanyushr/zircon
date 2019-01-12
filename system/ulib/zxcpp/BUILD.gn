@@ -1,0 +1,26 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+if (is_kernel) {  # TODO(mcgrathr): just move the code into the kernel proper
+  library("zxcpp") {
+    kernel = true
+    sources = [
+      "new.cpp",
+      "pure_virtual.cpp",
+    ]
+    if (toolchain.environment == "kernel") {
+      # Avoid circularity.
+      configs -= [ "$zx/kernel/vm:headers" ]
+    }
+  }
+} else {
+  # TODO(mcgrathr): Convert users to use the static-libc++ config directly.
+  group("zxcpp") {
+    public_deps = [
+      "$zx/public/gn/config:static-libc++",
+    ]
+  }
+}

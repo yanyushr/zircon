@@ -1,0 +1,30 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+group("test") {
+  testonly = true
+  deps = [
+    ":ftl",
+  ]
+}
+
+test("ftl") {
+  sources = [
+    "block_device_test.cpp",
+    "driver-test.cpp",
+    "ftl-shell.cpp",
+    "ftl-test.cpp",
+    "main.cpp",
+    "nand_driver_test.cpp",
+    "nand_operation_test.cpp",
+    "ndm-ram-driver.cpp",
+    "oob_doubler_test.cpp",
+  ]
+  include_dirs = [ ".." ]
+  deps = [
+    "$zx/system/dev/lib/fake_ddk",
+    "$zx/system/ulib/unittest",
+    "..:common",
+  ]
+}
