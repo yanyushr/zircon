@@ -127,6 +127,16 @@ inline constexpr auto FromRaw(Integer value) {
     return ValueExpression<Integer, FractionalBits>{value};
 }
 
+template <typename Integer, size_t FractionalBits>
+inline constexpr auto Max(Fixed<Integer, FractionalBits> a, Fixed<Integer, FractionalBits> b) {
+    return a > b ? a : b;
+}
+
+template <typename Integer, size_t FractionalBits>
+inline constexpr auto Min(Fixed<Integer, FractionalBits> a, Fixed<Integer, FractionalBits> b) {
+    return a < b ? a : b;
+}
+
 // Relational operators.
 template <typename Left, typename Right,
           typename Enabled = EnableIfComparisonExpression<Left, Right>>

@@ -22,12 +22,16 @@ typedef struct thread thread_t;
 // a weight of 1.0.
 using TaskWeight = ffl::Fixed<int32_t, 12>;
 
+// Fixed-point types wrapping time and duration types to make time expressions
+// cleaner in the scheduler code.
 using SchedDuration = ffl::Fixed<zx_duration_t, 0>;
 using SchedTime = ffl::Fixed<zx_time_t, 0>;
 
+// Utilities that return fixed-point Expression representing the given integer
+// time units in terms of system time units (nanoseconds).
 template <typename T>
-constexpr auto SchedNanoseconds(T nanooseconds) {
-    return ffl::FromInteger(ZX_NSEC(nanooseconds));
+constexpr auto SchedNanoseconds(T nanoseconds) {
+    return ffl::FromInteger(ZX_NSEC(nanoseconds));
 }
 template <typename T>
 constexpr auto SchedMicroseconds(T microseconds) {
@@ -40,7 +44,7 @@ constexpr auto SchedMilliseconds(T milliseconds) {
 
 class FairTaskState {
 public:
-    using KeyType = std::pair<SchedTime, uintptr_t>;
+    using KeyType = std::pair<SchedTime, uint64_t>;
 
     static constexpr TaskWeight kDefaultWeight = ffl::FromInteger(1);
 
@@ -56,7 +60,7 @@ public:
     TaskWeight effective_weight() const { return base_weight_; }
 
     // Returns the key used to order the run queue.
-    KeyType key() const { return {virtual_finish_time_ns_, reinterpret_cast<uintptr_t>(this)}; }
+    KeyType key() const { return {virtual_finish_time_ns_, generation_}; }
 
     bool operator<(const FairTaskState& other) const {
         return key() < other.key();
@@ -89,6 +93,10 @@ private:
     friend class FairScheduler;
 
     fbl::WAVLTreeNodeState<thread_t*> run_queue_node_;
+
+    // Takes the value of FairScheduler::generation_count_ + 1 at the time this
+    // node is added to the run queue.
+    uint64_t generation_{0};
 
     TaskWeight base_weight_{kDefaultWeight};
 
