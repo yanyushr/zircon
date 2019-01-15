@@ -5,12 +5,14 @@
 #pragma once
 
 #include <ddktl/device.h>
+#include <ddktl/protocol/empty-protocol.h>
 #include <ddktl/protocol/usb/dci.h>
 #include <ddktl/protocol/usb/function.h>
 #include <ddktl/protocol/usb/modeswitch.h>
+#include <fbl/array.h>
 #include <fbl/mutex.h>
+#include <fbl/ref_ptr.h>
 #include <fbl/string.h>
-#include <fbl/unique_ptr.h>
 #include <fbl/vector.h>
 #include <fuchsia/hardware/usb/peripheral/c/fidl.h>
 
@@ -75,12 +77,14 @@ using UsbPeripheralType = ddk::Device<UsbPeripheral, ddk::Unbindable, ddk::Messa
 // This is the main class for the USB peripheral role driver.
 // It binds against the USB DCI driver device and manages a list of UsbFunction devices,
 // one for each USB function in the peripheral role configuration.
-class UsbPeripheral : public UsbPeripheralType, public ddk::UsbDciInterface<UsbPeripheral> {
+class UsbPeripheral : public UsbPeripheralType,
+                      public ddk::EmptyProtocol<ZX_PROTOCOL_USB_PERIPHERAL>,
+                      public ddk::UsbDciInterface<UsbPeripheral> {
 public:
     UsbPeripheral(zx_device_t* parent)
         : UsbPeripheralType(parent), dci_(parent), ums_(parent) {}
 
-    static zx_status_t Create(zx_device_t* parent);
+    static zx_status_t Create(void* ctx, zx_device_t* parent);
 
     // Device protocol implementation.
     zx_status_t DdkMessage(fidl_msg_t* msg, fidl_txn_t* txn);
@@ -103,12 +107,13 @@ public:
     zx_status_t MsgGetMode(fidl_txn_t* txn);
     zx_status_t MsgSetMode(uint32_t mode, fidl_txn_t* txn);
 
-    zx_status_t SetFunctionInterface(UsbFunction* function,
+    zx_status_t SetFunctionInterface(fbl::RefPtr<UsbFunction> function,
                                      const usb_function_interface_t* interface);
-    zx_status_t AllocInterface(UsbFunction* function, uint8_t* out_intf_num);
-    zx_status_t AllocEndpoint(UsbFunction* function, uint8_t direction, uint8_t* out_address);
+    zx_status_t AllocInterface(fbl::RefPtr<UsbFunction> function, uint8_t* out_intf_num);
+    zx_status_t AllocEndpoint(fbl::RefPtr<UsbFunction> function, uint8_t direction,
+                              uint8_t* out_address);
     zx_status_t AllocStringDesc(const char* string, uint8_t* out_index);
-    zx_status_t ValidateFunction(UsbFunction* function, void* descriptors, size_t length,
+    zx_status_t ValidateFunction(fbl::RefPtr<UsbFunction> function, void* descriptors, size_t length,
                                  uint8_t* out_num_interfaces);
     zx_status_t FunctionRegistered();
 
@@ -159,21 +164,21 @@ private:
     // USB device descriptor set via ioctl_usb_peripheral_set_device_desc()
     usb_device_descriptor_t device_desc_ = {};
     // USB configuration descriptor, synthesized from our functions' descriptors.
-    usb_configuration_descriptor_t* config_desc_ = nullptr;
+    fbl::Array<uint8_t> config_desc_;
     // Map from interface number to function.
-    UsbFunction* interface_map_[MAX_INTERFACES] = {};
+    fbl::RefPtr<UsbFunction> interface_map_[MAX_INTERFACES];
     // Map from endpoint index to function.
-    UsbFunction* endpoint_map_[USB_MAX_EPS] = {};
+    fbl::RefPtr<UsbFunction> endpoint_map_[USB_MAX_EPS];
     // Strings for USB string descriptors.
     fbl::Vector<fbl::String> strings_;
     // List of usb_function_t.
-    fbl::Vector<fbl::unique_ptr<UsbFunction>> functions_;
+    fbl::Vector<fbl::RefPtr<UsbFunction>> functions_;
     // mutex for protecting our state
     fbl::Mutex lock_;
     // Current USB mode set via ioctl_usb_peripheral_set_mode()
     usb_mode_t usb_mode_ = USB_MODE_NONE;
     // Our parent's USB mode.
-     usb_mode_t dci_usb_mode_ = USB_MODE_NONE;
+    usb_mode_t dci_usb_mode_ = USB_MODE_NONE;
     // Set if ioctl_usb_peripheral_bind_functions() has been called
     // and we have a complete list of our function.
     bool functions_bound_ = false;

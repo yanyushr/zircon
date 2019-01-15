@@ -6,11 +6,13 @@
 #include "usb-peripheral.h"
 
 #include <ddk/debug.h>
+#include <fbl/array.h>
 
 namespace usb_peripheral {
 
 void UsbFunction::DdkRelease() {
-    // Do nothing here. This object is owned by the UsbPeripheral class so we don't delete ourself.
+    // Release the reference how that devmgr no longer has a pointer to the function.
+    __UNUSED bool dummy = Release();
 }
 
 // UsbFunctionProtocol implementation.
@@ -32,30 +34,31 @@ zx_status_t UsbFunction::UsbFunctionSetInterface(const usb_function_interface_t*
     function_intf_.GetDescriptors(descriptors, length, &actual);
     if (actual != length) {
         zxlogf(ERROR, "UsbFunctionInterfaceClient::GetDescriptors() failed\n");
+        delete[] descriptors;
         return ZX_ERR_INTERNAL;
     }
 
-    auto status = peripheral_->ValidateFunction(this, descriptors, length, &num_interfaces_);
+    auto status = peripheral_->ValidateFunction(fbl::RefPtr<UsbFunction>(this), descriptors, length,
+                                                &num_interfaces_);
     if (status != ZX_OK) {
+        delete[] descriptors;
         return status;
     }
 
-    descriptors_ = static_cast<usb_descriptor_header_t*>(malloc(length));
-    if (!descriptors_) {
+    descriptors_.reset(descriptors, length);
+    if (!ac.check()) {
         return ZX_ERR_NO_MEMORY;
     }
-    memcpy(descriptors_, descriptors, length);
-    descriptors_length_ = length;
 
     return peripheral_->FunctionRegistered();
 }
 
 zx_status_t UsbFunction::UsbFunctionAllocInterface(uint8_t* out_intf_num) {
-    return peripheral_->AllocInterface(this, out_intf_num);
+    return peripheral_->AllocInterface(fbl::RefPtr<UsbFunction>(this), out_intf_num);
 }
 
 zx_status_t UsbFunction::UsbFunctionAllocEp(uint8_t direction, uint8_t* out_address) {
-    return peripheral_->AllocEndpoint(this, direction, out_address);
+    return peripheral_->AllocEndpoint(fbl::RefPtr<UsbFunction>(this), direction, out_address);
 }
 
 zx_status_t UsbFunction::UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep_desc,
@@ -67,8 +70,8 @@ zx_status_t UsbFunction::UsbFunctionDisableEp(uint8_t address) {
     return peripheral_->dci().DisableEp(address);
 }
 
-zx_status_t UsbFunction::UsbFunctionAllocStringDesc(const char* string, uint8_t* out_index) {
-    return peripheral_->AllocStringDesc(string, out_index);
+zx_status_t UsbFunction::UsbFunctionAllocStringDesc(const char* str, uint8_t* out_index) {
+    return peripheral_->AllocStringDesc(str, out_index);
 }
 
 void UsbFunction::UsbFunctionRequestQueue(usb_request_t* usb_request,

@@ -21,6 +21,7 @@
 #include <ddk/protocol/usb/modeswitch.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
+#include <fbl/unique_ptr.h>
 #include <zircon/device/usb-peripheral.h>
 #include <zircon/hw/usb.h>
 #include <zircon/hw/usb/cdc.h>
@@ -30,20 +31,20 @@
 
 namespace usb_peripheral {
 
-zx_status_t UsbPeripheral::Create(zx_device_t* parent) {
+zx_status_t UsbPeripheral::Create(void* ctx, zx_device_t* parent) {
     fbl::AllocChecker ac;
-    auto bus = fbl::make_unique_checked<UsbPeripheral>(&ac, parent);
+    auto device = fbl::make_unique_checked<UsbPeripheral>(&ac, parent);
     if (!ac.check()) {
         return ZX_ERR_NO_MEMORY;
     }
 
-    auto status = bus->Init();
+    auto status = device->Init();
     if (status != ZX_OK) {
         return status;
     }
 
     // devmgr is now in charge of the device.
-    __UNUSED auto* dummy = bus.release();
+    __UNUSED auto* dummy = device.release();
     return ZX_OK;
 }
 
@@ -72,8 +73,7 @@ zx_status_t UsbPeripheral::Init() {
     }
     parent_request_size_ = dci_.GetRequestSize();
 
-    status = DdkAdd("usb-peripheral", DEVICE_ADD_NON_BINDABLE, nullptr, 0,
-                    ZX_PROTOCOL_USB_PERIPHERAL);
+    status = DdkAdd("usb-peripheral", DEVICE_ADD_NON_BINDABLE);
     if (status != ZX_OK) {
         return status;
     }
@@ -106,8 +106,8 @@ zx_status_t UsbPeripheral::AllocStringDesc(const char* string, uint8_t* out_inde
     return ZX_OK;
 }
 
-zx_status_t UsbPeripheral::ValidateFunction(UsbFunction* function, void* descriptors, size_t length,
-                                            uint8_t* out_num_interfaces) {
+zx_status_t UsbPeripheral::ValidateFunction(fbl::RefPtr<UsbFunction> function, void* descriptors,
+                                            size_t length, uint8_t* out_num_interfaces) {
     auto* intf_desc = static_cast<usb_interface_descriptor_t*>(descriptors);
     if (intf_desc->bDescriptorType != USB_DT_INTERFACE ||
             intf_desc->bLength != sizeof(usb_interface_descriptor_t)) {
@@ -159,7 +159,7 @@ zx_status_t UsbPeripheral::ValidateFunction(UsbFunction* function, void* descrip
 zx_status_t UsbPeripheral::FunctionRegistered() {
     fbl::AutoLock lock(&lock_);
 
-    if (config_desc_) {
+    if (config_desc_.size() == 0) {
         zxlogf(ERROR, "usb_device_function_registered: already have configuration descriptor!\n");
         return ZX_ERR_BAD_STATE;
     }
@@ -180,11 +180,11 @@ zx_status_t UsbPeripheral::FunctionRegistered() {
 
     // build our configuration descriptor
     fbl::AllocChecker ac;
-    auto* config_desc = reinterpret_cast<usb_configuration_descriptor_t*>(
-                                                                    new (&ac) uint8_t[length]);
+    auto* config_desc_bytes = new (&ac) uint8_t[length];
     if (!ac.check()) {
         return ZX_ERR_NO_MEMORY;
     }
+    auto* config_desc = reinterpret_cast<usb_configuration_descriptor_t*>(config_desc_bytes);
 
     config_desc->bLength = sizeof(*config_desc);
     config_desc->bDescriptorType = USB_DT_CONFIG;
@@ -206,7 +206,7 @@ zx_status_t UsbPeripheral::FunctionRegistered() {
         config_desc->bNumInterfaces = static_cast<uint8_t>(config_desc->bNumInterfaces +
                                                            function->GetNumInterfaces());
     }
-    config_desc_ = config_desc;
+    config_desc_.reset(config_desc_bytes, length);
 
     zxlogf(TRACE, "usb_device_function_registered functions_registered = true\n");
     functions_registered_ = true;
@@ -214,7 +214,8 @@ zx_status_t UsbPeripheral::FunctionRegistered() {
     return DeviceStateChanged();
 }
 
-zx_status_t UsbPeripheral::AllocInterface(UsbFunction* function, uint8_t* out_intf_num) {
+zx_status_t UsbPeripheral::AllocInterface(fbl::RefPtr<UsbFunction> function,
+                                          uint8_t* out_intf_num) {
     fbl::AutoLock lock(&lock_);
 
     for (uint8_t i = 0; i < countof(interface_map_); i++) {
@@ -228,7 +229,7 @@ zx_status_t UsbPeripheral::AllocInterface(UsbFunction* function, uint8_t* out_in
     return ZX_ERR_NO_RESOURCES;
 }
 
-zx_status_t UsbPeripheral::AllocEndpoint(UsbFunction* function, uint8_t direction,
+zx_status_t UsbPeripheral::AllocEndpoint(fbl::RefPtr<UsbFunction> function, uint8_t direction,
                                          uint8_t* out_address) {
     uint8_t start, end;
 
@@ -258,64 +259,68 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
                                          void* buffer, size_t length, size_t* out_actual) {
     uint8_t type = request_type & USB_TYPE_MASK;
 
-    if (type == USB_TYPE_STANDARD) {
-        auto desc_type = static_cast<uint8_t>(value >> 8);
-        if (desc_type == USB_DT_DEVICE && index == 0) {
-            if (device_desc_.bLength == 0) {
-                zxlogf(ERROR, "%s: device descriptor not set\n", __func__);
-                return ZX_ERR_INTERNAL;
-            }
-            if (length > sizeof(device_desc_)) length = sizeof(device_desc_);
-            memcpy(buffer, &device_desc_, length);
-            *out_actual = length;
-            return ZX_OK;
-        } else if (desc_type == USB_DT_CONFIG && index == 0) {
-            const usb_configuration_descriptor_t* desc = config_desc_;
-            if (!desc) {
-                zxlogf(ERROR, "%s: configuration descriptor not set\n", __func__);
-                return ZX_ERR_INTERNAL;
-            }
-            uint16_t desc_length = letoh16(desc->wTotalLength);
-            if (length > desc_length) length =desc_length;
-            memcpy(buffer, desc, length);
-            *out_actual = length;
-            return ZX_OK;
+    if (type != USB_TYPE_STANDARD) {
+        zxlogf(ERROR, "%s unsupported value: %d index: %d\n", __func__, value, index);
+        return ZX_ERR_NOT_SUPPORTED;
+    }
+
+    auto desc_type = static_cast<uint8_t>(value >> 8);
+    if (desc_type == USB_DT_DEVICE && index == 0) {
+        if (device_desc_.bLength == 0) {
+            zxlogf(ERROR, "%s: device descriptor not set\n", __func__);
+            return ZX_ERR_INTERNAL;
         }
-        else if (value >> 8 == USB_DT_STRING) {
-            uint8_t desc[255];
-            auto* header = reinterpret_cast<usb_descriptor_header_t*>(desc);
-            header->bDescriptorType = USB_DT_STRING;
-
-            auto string_index = static_cast<uint8_t>(value & 0xFF);
-            if (string_index == 0) {
-                // special case - return language list
-                header->bLength = 4;
-                desc[2] = 0x09;     // language ID
-                desc[3] = 0x04;
-            } else {
-                // String indices are 1-based.
-                string_index--;
-                if (string_index >= strings_.size()) {
-                    return ZX_ERR_INVALID_ARGS;
-                }
-                const char* string = strings_[string_index].c_str();
-                unsigned index = 2;
-
-                // convert ASCII to Unicode
-                if (string) {
-                    while (*string && index < sizeof(desc) - 2) {
-                        desc[index++] = *string++;
-                        desc[index++] = 0;
-                    }
-                }
-                header->bLength = static_cast<uint8_t>(index);
-            }
-
-            if (header->bLength < length) length = header->bLength;
-            memcpy(buffer, desc, length);
-            *out_actual = length;
-            return ZX_OK;
+        if (length > sizeof(device_desc_)) length = sizeof(device_desc_);
+        memcpy(buffer, &device_desc_, length);
+        *out_actual = length;
+        return ZX_OK;
+    } else if (desc_type == USB_DT_CONFIG && index == 0) {
+        if (config_desc_.size() == 0) {
+            zxlogf(ERROR, "%s: configuration descriptor not set\n", __func__);
+            return ZX_ERR_INTERNAL;
         }
+        auto desc_length = config_desc_.size();
+        if (length > desc_length) {
+            length = desc_length;
+        }
+        memcpy(buffer, config_desc_.get(), length);
+        *out_actual = length;
+        return ZX_OK;
+    }
+    else if (value >> 8 == USB_DT_STRING) {
+        uint8_t desc[255];
+        auto* header = reinterpret_cast<usb_descriptor_header_t*>(desc);
+        header->bDescriptorType = USB_DT_STRING;
+
+        auto string_index = static_cast<uint8_t>(value & 0xFF);
+        if (string_index == 0) {
+            // special case - return language list
+            header->bLength = 4;
+            desc[2] = 0x09;     // language ID
+            desc[3] = 0x04;
+        } else {
+            // String indices are 1-based.
+            string_index--;
+            if (string_index >= strings_.size()) {
+                return ZX_ERR_INVALID_ARGS;
+            }
+            const char* string = strings_[string_index].c_str();
+            unsigned index = 2;
+
+            // convert ASCII to UTF16
+            if (string) {
+                while (*string && index < sizeof(desc) - 2) {
+                    desc[index++] = *string++;
+                    desc[index++] = 0;
+                }
+            }
+            header->bLength = static_cast<uint8_t>(index);
+        }
+
+        if (header->bLength < length) length = header->bLength;
+        memcpy(buffer, desc, length);
+        *out_actual = length;
+        return ZX_OK;
     }
 
     zxlogf(ERROR, "%s unsupported value: %d index: %d\n", __func__, value, index);
@@ -345,8 +350,8 @@ zx_status_t UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting) 
         return ZX_ERR_OUT_OF_RANGE;
     }
 
-    auto* function = interface_map_[interface];
-    if (function) {
+    auto function = interface_map_[interface];
+    if (function != nullptr) {
         return function->SetInterface(interface, alt_setting);
     }
     return ZX_ERR_NOT_SUPPORTED;
@@ -358,12 +363,12 @@ zx_status_t UsbPeripheral::AddFunction(const FunctionDescriptor* desc) {
     }
 
     fbl::AllocChecker ac;
-    auto function = fbl::make_unique_checked<UsbFunction>(&ac, zxdev(), this, desc);
+    auto function = fbl::MakeRefCountedChecked<UsbFunction>(&ac, zxdev(), this, desc);
     if (!ac.check()) {
         return ZX_ERR_NO_MEMORY;
     }
 
-    functions_.push_back(std::move(function));
+    functions_.push_back(function);
 
     return ZX_OK;
 }
@@ -400,14 +405,16 @@ zx_status_t UsbPeripheral::ClearFunctions() {
         }
     }
     functions_.reset();
-
-    delete[] config_desc_;
-    config_desc_ = nullptr;
+    config_desc_.reset();
     functions_bound_ = false;
     functions_registered_ = false;
 
-    memset(interface_map_, 0, sizeof(interface_map_));
-    memset(endpoint_map_, 0, sizeof(endpoint_map_));
+    for (size_t i = 0; i < countof(interface_map_); i++) {
+        interface_map_[i].reset();
+    }
+    for (size_t i = 0; i < countof(endpoint_map_); i++) {
+        endpoint_map_[i].reset();
+    }
     strings_.reset();
 
     return DeviceStateChanged();
@@ -420,7 +427,7 @@ zx_status_t UsbPeripheral::AddFunctionDevices() {
     }
 
     for (unsigned i = 0; i < functions_.size(); i++) {
-        auto* function = functions_[i].get();
+        auto function = functions_[i];
         char name[16];
         snprintf(name, sizeof(name), "function-%03u", i);
 
@@ -440,6 +447,8 @@ zx_status_t UsbPeripheral::AddFunctionDevices() {
             zxlogf(ERROR, "usb_dev_bind_functions add_device failed %d\n", status);
             return status;
         }
+        // Hold a reference while devmgr has a pointer to the function.
+        function->AddRef();
     }
 
     function_devs_added_ = true;
@@ -456,8 +465,7 @@ void UsbPeripheral::RemoveFunctionDevices() {
         function->DdkRemove();
     }
 
-    delete[] config_desc_;
-    config_desc_ = NULL;
+    config_desc_.reset();
     functions_registered_ = false;
     function_devs_added_ = false;
 }
@@ -557,8 +565,8 @@ zx_status_t UsbPeripheral::UsbDciInterfaceControl(const usb_setup_t* setup,
                 return ZX_ERR_OUT_OF_RANGE;
             }
             // delegate to the function driver for the interface
-            auto* function = interface_map_[index];
-            if (function) {
+            auto function = interface_map_[index];
+            if (function != nullptr) {
                 return function->Control(setup, write_buffer, write_size, read_buffer, read_size,
                                          out_read_actual);
             }
@@ -574,8 +582,8 @@ zx_status_t UsbPeripheral::UsbDciInterfaceControl(const usb_setup_t* setup,
         if (index >= countof(endpoint_map_)) {
             return ZX_ERR_OUT_OF_RANGE;
         }
-        auto* function = endpoint_map_[index];
-        if (function ) {
+        auto function = endpoint_map_[index];
+        if (function != nullptr) {
             return function->Control(setup, write_buffer, write_size, read_buffer, read_size,
                                      out_read_actual);
         }
@@ -703,7 +711,6 @@ void UsbPeripheral::DdkUnbind() {
 
 void UsbPeripheral::DdkRelease() {
     zxlogf(TRACE, "%s\n", __func__);
-    delete[] config_desc_;
     delete this;
 }
 
@@ -764,14 +771,10 @@ zx_status_t UsbPeripheral::SetDefaultConfig() {
 }
 #endif // defined(USB_DEVICE_VID) && defined(USB_DEVICE_PID) && defined(USB_DEVICE_FUNCTIONS)
 
-zx_status_t usb_peripheral_bind(void* ctx, zx_device_t* parent) {
-    return UsbPeripheral::Create(parent);
-}
-
 static zx_driver_ops_t ops = [](){
     zx_driver_ops_t ops = {};
     ops.version = DRIVER_OPS_VERSION;
-    ops.bind = usb_peripheral_bind;
+    ops.bind = UsbPeripheral::Create;
     return ops;
 }();
 
