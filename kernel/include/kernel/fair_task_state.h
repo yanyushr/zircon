@@ -17,10 +17,10 @@
 // Forward declaration.
 typedef struct thread thread_t;
 
-// Fixed-point task weight / priority with 19bit integral and 12bit fractional
-// parts. This split permits the run queue to accurately track ~500k tasks with
-// a weight of 1.0.
-using TaskWeight = ffl::Fixed<int32_t, 12>;
+// Fixed-point task weight/priority. The 5bit fractional component supports 32
+// priority levels (1/32 through 32/32), while the 27bit integer component
+// supports sums of ~134M threads with weight 1.0.
+using TaskWeight = ffl::Fixed<int32_t, 5>;
 
 // Fixed-point types wrapping time and duration types to make time expressions
 // cleaner in the scheduler code.
@@ -60,7 +60,7 @@ public:
     TaskWeight effective_weight() const { return base_weight_; }
 
     // Returns the key used to order the run queue.
-    KeyType key() const { return {virtual_finish_time_ns_, generation_}; }
+    KeyType key() const { return {virtual_finish_time_grans_, generation_}; }
 
     bool operator<(const FairTaskState& other) const {
         return key() < other.key();
@@ -102,12 +102,12 @@ private:
 
     // TODO(eieio): Some of the values below are only relevant when running,
     // while others only while ready. Consider using a union to save space.
-    SchedTime virtual_start_time_ns_{SchedNanoseconds(0)};
-    SchedTime virtual_finish_time_ns_{SchedNanoseconds(0)};
+    SchedTime virtual_start_time_grans_{ffl::FromInteger(0)};
+    SchedTime virtual_finish_time_grans_{ffl::FromInteger(0)};
 
+    SchedDuration time_slice_grans_{ffl::FromInteger(0)};
     SchedDuration time_slice_ns_{SchedNanoseconds(0)};
     SchedDuration lag_time_ns_{SchedNanoseconds(0)};
-
     SchedDuration runtime_ns_{SchedNanoseconds(0)};
 
     bool active_{false};

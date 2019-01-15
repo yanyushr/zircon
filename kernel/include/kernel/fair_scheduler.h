@@ -111,14 +111,12 @@ private:
 
     SchedTime TA_GUARDED(thread_lock) virtual_time_ns_{SchedNanoseconds(0)};
     SchedTime TA_GUARDED(thread_lock) last_update_time_ns_{SchedNanoseconds(0)};
-    //SchedTime TA_GUARDED(thread_lock) rebalancing_time_ns_{SchedNanoseconds(0)};
     SchedTime TA_GUARDED(thread_lock) absolute_deadline_ns_{SchedNanoseconds(0)};
-
     SchedTime TA_GUARDED(thread_lock) last_reschedule_time_ns_{SchedNanoseconds(0)};
 
     // Scheduling period in which every runnable task executes once, in units of
     // minimum granularity (grans).
-    int64_t TA_GUARDED(thread_lock) scheduling_period_grans_{0};
+    SchedDuration TA_GUARDED(thread_lock) scheduling_period_grans_{ffl::FromInteger(0)};
 
     SchedDuration TA_GUARDED(thread_lock) minimum_granularity_ns_{kDefaultMinimumGranularity};
     SchedDuration TA_GUARDED(thread_lock) target_latency_ns_{kDefaultTargetLatency};
