@@ -108,7 +108,6 @@ private:
     SchedDuration time_slice_grans_{ffl::FromInteger(0)};
     SchedDuration time_slice_ns_{SchedNanoseconds(0)};
     SchedDuration lag_time_ns_{SchedNanoseconds(0)};
-    SchedDuration runtime_ns_{SchedNanoseconds(0)};
 
     bool active_{false};
 };

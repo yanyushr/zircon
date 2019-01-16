@@ -51,6 +51,8 @@ public:
     TaskWeight GetTotalWeight();
     size_t GetRunnableTasks();
 
+    void Dump() TA_REQ(thread_lock);
+
 private:
     // Returns the current system time as a SchedTime value.
     static SchedTime CurrentTime() {
@@ -68,7 +70,7 @@ private:
     void RescheduleCommon(SchedTime now) TA_REQ(thread_lock);
 
     // Returns the next thread to execute.
-    thread_t* NextThread(thread_t* current_thread, thread_t* idle_thread, bool timeslice_expired) TA_REQ(thread_lock);
+    thread_t* NextThread(thread_t* current_thread, bool timeslice_expired) TA_REQ(thread_lock);
 
     void QueueThread(thread_t* thread) TA_REQ(thread_lock);
 
