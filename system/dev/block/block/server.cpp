@@ -21,6 +21,7 @@
 #include <zircon/syscalls.h>
 
 #include "server.h"
+#include "server-manager.h"
 
 namespace {
 
@@ -53,22 +54,11 @@ void OutOfBandRespond(const fzl::fifo<block_fifo_response_t, block_fifo_request_
     }
 }
 
-void BlockComplete(BlockMsg* msg, zx_status_t status) {
-    auto extra = msg->extra();
-    // Since iobuf is a RefPtr, it lives at least as long as the txn,
-    // and is not discarded underneath the block device driver.
-    extra->iobuf = nullptr;
-    extra->server->TxnComplete(status, extra->reqid, extra->group);
-    extra->server->TxnEnd();
-}
-
 void BlockCompleteCb(void* cookie, zx_status_t status, block_op_t* bop) {
     ZX_DEBUG_ASSERT(bop != nullptr);
     BlockMsg msg(static_cast<block_msg_t*>(cookie));
-    BlockComplete(&msg, status);
-
-    // Todo: call queue->AsyncCompleteOp()
-
+    BlockServer* server = msg.extra()->server;
+    server->AsyncBlockComplete(&msg, status);
 }
 
 uint32_t OpcodeToCommand(uint32_t opcode) {
@@ -144,6 +134,19 @@ void BlockServer::TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group
         ZX_DEBUG_ASSERT(group < MAX_TXN_GROUP_COUNT);
         groups_[group].Complete(status);
     }
+}
+
+void BlockServer::AsyncBlockComplete(BlockMsg* msg, zx_status_t status) {
+    auto extra = msg->extra();
+    // Since iobuf is a RefPtr, it lives at least as long as the txn,
+    // and is not discarded underneath the block device driver.
+    extra->iobuf = nullptr;
+    extra->server->TxnComplete(status, extra->reqid, extra->group);
+    extra->server->TxnEnd();
+
+    // // Todo: call queue->AsyncCompleteOp()
+    io_op_t* op = &extra->iop;
+    manager_->AsyncCompleteOp(op, status);
 }
 
 zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t max, size_t* actual) {
@@ -389,11 +392,11 @@ zx_status_t BlockServer::Service(io_op_t* op) {
 //     }
 // }
 
-zx_status_t BlockServer::Create(ddk::BlockProtocolClient* bp, fzl::fifo<block_fifo_request_t,
-                                block_fifo_response_t>* fifo_out,
+zx_status_t BlockServer::Create(ServerManager* manager, ddk::BlockProtocolClient* bp,
+                                fzl::fifo<block_fifo_request_t, block_fifo_response_t>* fifo_out,
                                 fbl::unique_ptr<BlockServer>* out) {
     fbl::AllocChecker ac;
-    BlockServer* bs = new (&ac) BlockServer(bp);
+    BlockServer* bs = new (&ac) BlockServer(manager, bp);
     if (!ac.check()) {
         return ZX_ERR_NO_MEMORY;
     }
@@ -610,12 +613,27 @@ zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait
     }
     printf("read %zu requests\n", actual);
     for (size_t i = 0; i < actual; i++) {
-        // bool wants_reply = requests[i].opcode & BLOCKIO_GROUP_LAST;
-        // reqid_t reqid = requests[i].reqid;
         bool use_group = requests[i].opcode & BLOCKIO_GROUP_ITEM;
-        ZX_DEBUG_ASSERT(use_group == false);
-
-        requests[i].group = kNoGroup;
+        if (use_group) {
+            bool wants_reply = requests[i].opcode & BLOCKIO_GROUP_LAST;
+            reqid_t reqid = requests[i].reqid;
+            groupid_t group = requests[i].group;
+            if (group >= MAX_TXN_GROUP_COUNT) {
+                // Operation which is not accessing a valid group.
+                if (wants_reply) {
+                    OutOfBandRespond(fifo_, ZX_ERR_IO, reqid, group);
+                }
+                continue;
+            }
+            // Enqueue the message against the transaction group.
+            status = groups_[group].Enqueue(wants_reply, reqid);
+            if (status != ZX_OK) {
+                TxnComplete(status, reqid, group);
+                continue;
+            }
+        } else {
+            requests[i].group = kNoGroup;
+        }
         ProcessRequest(&requests[i]);
     }
     for (i = 0; i < max_ops; i++) {
@@ -674,9 +692,9 @@ zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait
 //     }
 // }
 
-BlockServer::BlockServer(ddk::BlockProtocolClient* bp) :
+BlockServer::BlockServer(ServerManager* manager, ddk::BlockProtocolClient* bp) :
     bp_(bp), block_op_size_(0), pending_count_(0), barrier_in_progress_(false),
-    last_id_(VMOID_INVALID + 1) {
+    last_id_(VMOID_INVALID + 1), manager_(manager) {
     size_t block_op_size;
     bp->Query(&info_, &block_op_size);
     ops_.acquire = OpAcquire;

@@ -25,7 +25,7 @@ zx_status_t ServerManager::StartServer(ddk::BlockProtocolClient* protocol, zx::f
 
     fbl::unique_ptr<BlockServer> server;
     fzl::fifo<block_fifo_request_t, block_fifo_response_t> fifo;
-    zx_status_t status = BlockServer::Create(protocol, &fifo, &server);
+    zx_status_t status = BlockServer::Create(this, protocol, &fifo, &server);
     if (status != ZX_OK) {
         return status;
     }

@@ -30,6 +30,7 @@
 #include "io-queue.h"
 #include "txn-group.h"
 
+class ServerManager;
 using io_op_t = ioqueue::io_op_t;
 
 // Represents the mapping of "vmoid --> VMO"
@@ -149,10 +150,9 @@ private:
 class BlockServer {
 public:
     // Creates a new BlockServer.
-    static zx_status_t Create(
-        ddk::BlockProtocolClient* bp,
-        fzl::fifo<block_fifo_request_t, block_fifo_response_t>* fifo_out,
-        fbl::unique_ptr<BlockServer>* out);
+    static zx_status_t Create(ServerManager* manager, ddk::BlockProtocolClient* bp,
+                              fzl::fifo<block_fifo_request_t, block_fifo_response_t>* fifo_out,
+                              fbl::unique_ptr<BlockServer>* out);
 
     // Starts the BlockServer using the current thread
     // zx_status_t Serve() TA_EXCL(server_lock_);
@@ -173,11 +173,13 @@ public:
     // (If appropriate) tells the client that their operation is done.
     void TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group);
 
+    void AsyncBlockComplete(BlockMsg* msg, zx_status_t status);
+
     void Shutdown();
     ~BlockServer();
 private:
     DISALLOW_COPY_ASSIGN_AND_MOVE(BlockServer);
-    BlockServer(ddk::BlockProtocolClient* bp);
+    BlockServer(ServerManager* manager, ddk::BlockProtocolClient* bp);
 
     // Helper for processing a single message read from the FIFO.
     zx_status_t ProcessRequest(block_fifo_request_t* request);
@@ -234,5 +236,6 @@ private:
     fbl::WAVLTree<vmoid_t, fbl::RefPtr<IoBuffer>> tree_ TA_GUARDED(server_lock_);
     vmoid_t last_id_ TA_GUARDED(server_lock_);
 
+    ServerManager* manager_;
     ioqueue::QueueOps ops_{};
 };

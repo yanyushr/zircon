@@ -42,6 +42,10 @@ public:
     // Returns an error if a server is not currently running.
     zx_status_t AttachVmo(zx::vmo vmo, vmoid_t* out_vmoid);
 
+    inline void AsyncCompleteOp(ioqueue::io_op_t* op, zx_status_t result) {
+        queue_->AsyncCompleteOp(op, result);
+    }
+
 private:
     // Frees the Fifo server, cleaning up "server_" and setting the thread state to none.
     //

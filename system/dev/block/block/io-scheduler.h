@@ -19,7 +19,7 @@
 
 #define SCHED_OPS_HIWAT 20
 #define SCHED_OPS_LOWAT 5
-#define SCHED_MAX_ISSUES 2
+#define SCHED_MAX_ISSUES 1 // TODO, make dynamic
 
 namespace ioqueue {
 

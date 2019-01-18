@@ -122,10 +122,11 @@ zx_status_t Scheduler::GetNextOp(bool wait, io_op_t** op_out) {
         if (err == 0) {
             break;
         }
-        if (wait && (errno == EAGAIN)) {
+        int eno = errno;
+        if ((!wait) && (eno == EAGAIN)) {
             return ZX_ERR_SHOULD_WAIT;
         }
-        ZX_DEBUG_ASSERT(errno == EINTR);
+        ZX_DEBUG_ASSERT(eno == EINTR);
     }
     // Holding an issue slot.
     fbl::AutoLock lock(&lock_);
