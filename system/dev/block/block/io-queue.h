@@ -37,7 +37,8 @@ struct QueueOps {
 
 class Queue {
 public:
-    // Client API.
+    // Client API - synchronous calls.
+    // -------------------------------
     Queue(const QueueOps* ops);
     ~Queue();
 
@@ -54,7 +55,12 @@ public:
     // Close all streams and wait for completion.
     void Shutdown();
 
+    // Client API - asynchronous calls.
+    // --------------------------------
+    void AsyncCompleteOp(io_op_t* op, zx_status_t result) { sched_.CompleteOp(op, result); }
+
     // API invoked by worker threads.
+    // ------------------------------
     zx_status_t WorkerAcquireLoop();
     zx_status_t WorkerIssueLoop();
     void WorkerExited(uint32_t id);

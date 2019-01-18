@@ -33,7 +33,7 @@ constexpr zx_signals_t kSignalFifoOpsComplete = ZX_USER_SIGNAL_1;
 // Signalled on the fifo when it has finished terminating.
 // (If we need to free up user signals, this could easily be transformed
 // into a completion object).
-constexpr zx_signals_t kSignalFifoTerminated  = ZX_USER_SIGNAL_2;
+// constexpr zx_signals_t kSignalFifoTerminated  = ZX_USER_SIGNAL_2;
 
 // Impossible groupid used internally to signify that an operation
 // has no accompanying group.
@@ -66,6 +66,9 @@ void BlockCompleteCb(void* cookie, zx_status_t status, block_op_t* bop) {
     ZX_DEBUG_ASSERT(bop != nullptr);
     BlockMsg msg(static_cast<block_msg_t*>(cookie));
     BlockComplete(&msg, status);
+
+    // Todo: call queue->AsyncCompleteOp()
+
 }
 
 uint32_t OpcodeToCommand(uint32_t opcode) {
@@ -108,18 +111,21 @@ zx_status_t IoBuffer::ValidateVmoHack(uint64_t length, uint64_t vmo_offset) {
 }
 
 void BlockServer::BarrierComplete() {
+#if 0
     // This is the only location that unsets the OpsComplete
     // signal. We'll never "miss" a signal, because we process
     // the queue AFTER unsetting it.
     barrier_in_progress_.store(false);
     fifo_.signal(kSignalFifoOpsComplete, 0);
     InQueueDrainer();
+#endif
 }
 
 void BlockServer::TerminateQueue() {
+#if 0
     InQueueDrainer();
     while (true) {
-        if (pending_count_.load() == 0 && in_queue_.is_empty()) {
+        if (pending_count_.load() == 0 && intake_queue_.is_empty()) {
             return;
         }
         zx_signals_t signals = kSignalFifoOpsComplete;
@@ -129,6 +135,7 @@ void BlockServer::TerminateQueue() {
             BarrierComplete();
         }
     }
+#endif
 }
 void BlockServer::TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group) {
     if (group == kNoGroup) {
@@ -139,19 +146,21 @@ void BlockServer::TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group
     }
 }
 
-zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t* count) {
-    auto cleanup = fbl::MakeAutoCall([this]() {
-        TerminateQueue();
-        ZX_ASSERT(pending_count_.load() == 0);
-        ZX_ASSERT(in_queue_.is_empty());
-        fifo_.signal(0, kSignalFifoTerminated);
-    });
+zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t max, size_t* actual) {
+    ZX_DEBUG_ASSERT(max > 0);
+
+    // auto cleanup = fbl::MakeAutoCall([this]() {
+    //     TerminateQueue();
+    //     ZX_ASSERT(pending_count_.load() == 0);
+    //     ZX_ASSERT(intake_queue_.is_empty());
+    //     fifo_.signal(0, kSignalFifoTerminated);
+    // });
 
     // Keep trying to read messages from the fifo until we have a reason to
     // terminate
     zx_status_t status;
     while (true) {
-        status = fifo_.read(requests, BLOCK_FIFO_MAX_DEPTH, count);
+        status = fifo_.read(requests, max, actual);
         zx_signals_t signals;
         zx_signals_t seen;
         switch (status) {
@@ -171,7 +180,7 @@ zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t* count) {
             // Try reading again...
             break;
         case ZX_OK:
-            cleanup.cancel();
+            // cleanup.cancel();
             return ZX_OK;
         default:
             return status;
@@ -179,87 +188,87 @@ zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t* count) {
     }
 }
 
-struct RequestWrapper {
-    RequestWrapper(const block_fifo_request_t* req);
+// struct RequestWrapper {
+//     RequestWrapper(const block_fifo_request_t* req);
 
-    ioqueue::io_op_t op_;
-    block_fifo_request_t request_;
-};
+//     io_op_t op_;
+//     block_fifo_request_t request_;
+// };
 
-RequestWrapper::RequestWrapper(const block_fifo_request_t* req) {
-    memset(&op_, 0, sizeof(op_));
-    memcpy(&request_, req, sizeof(request_));
-    // todo: set opcode, sid
-}
+// RequestWrapper::RequestWrapper(const block_fifo_request_t* req) {
+//     memset(&op_, 0, sizeof(op_));
+//     memcpy(&request_, req, sizeof(request_));
+//     // todo: set opcode, sid
+// }
 
-zx_status_t BlockServer::ReadOps(ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
-    uint32_t max_ops = *op_count;
-    if (max_ops == 0) {
-        printf("%s:%u\n", __FUNCTION__, __LINE__);
-        return ZX_ERR_INVALID_ARGS;
-    }
-    if (max_ops > BLOCK_FIFO_MAX_DEPTH) {
-        max_ops = BLOCK_FIFO_MAX_DEPTH;
-    }
-    block_fifo_request_t requests[BLOCK_FIFO_MAX_DEPTH];
-    size_t count;
-    zx_status_t status;
-    for ( ; ; ) {
-        if ((status = fifo_.read(requests, BLOCK_FIFO_MAX_DEPTH, &count)) == ZX_OK) {
-            break;
-        }
-        printf("%s:%u\n", __FUNCTION__, __LINE__);
-        if (status != ZX_ERR_SHOULD_WAIT) {
-            printf("%s:%u\n", __FUNCTION__, __LINE__);
-            printf("read error\n");
-            return ZX_ERR_IO;
-        }
-        zx_signals_t signals = ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED |
-                               kSignalFifoTerminate | kSignalFifoOpsComplete;
-        zx_signals_t seen;
-        status = fifo_.wait_one(signals, zx::time::infinite(), &seen);
-        if (status == ZX_ERR_CANCELED) {
-            // Fifo closed locally by shutdown routine.
-            return ZX_ERR_CANCELED;
-        }
-        if (status != ZX_OK) {
-            return ZX_ERR_IO;
-        }
-            // if (seen & kSignalFifoOpsComplete) {
-            //     BarrierComplete();
-            //     continue;
-            // }
-        if ((seen & ZX_FIFO_PEER_CLOSED) || (seen & kSignalFifoTerminate)) {
-            printf("%s:%u\n", __FUNCTION__, __LINE__);
-            return ZX_ERR_CANCELED;  // todo: switch to ZX_ERR_PEER_CLOSED
-        }
-    }
-    // todo: make this not suck.
-    memset(op_list, 0, sizeof(op_list[0]) * max_ops);
-    fbl::AllocChecker ac;
-    status = ZX_OK;
-    for (size_t i = 0; i < count; i++) {
-        RequestWrapper* wrapper = new (&ac) RequestWrapper(&requests[i]);
-        if (!ac.check()) {
-            status = ZX_ERR_IO;
-            printf("%s:%u\n", __FUNCTION__, __LINE__);
-            break;
-        }
-        op_list[i] = &wrapper->op_;
-    }
-    if (status != ZX_OK) {
-        for (size_t i = 0; i < max_ops; i++) {
-            if (op_list[i] != nullptr) {
-                delete op_list[i];
-                op_list[i] = nullptr;
-            }
-        }
-        count = 0;
-    }
-    *op_count = static_cast<uint32_t>(count);
-    return status;
-}
+// zx_status_t BlockServer::ReadOps(io_op_t** op_list, uint32_t* op_count, bool wait) {
+//     printf("%s:%u\n", __FUNCTION__, __LINE__);
+//     uint32_t max_ops = *op_count;
+//     if (max_ops == 0) {
+//         printf("%s:%u\n", __FUNCTION__, __LINE__);
+//         return ZX_ERR_INVALID_ARGS;
+//     }
+//     if (max_ops > BLOCK_FIFO_MAX_DEPTH) {
+//         max_ops = BLOCK_FIFO_MAX_DEPTH;
+//     }
+//     block_fifo_request_t requests[BLOCK_FIFO_MAX_DEPTH];
+//     size_t count;
+//     zx_status_t status;
+//     for ( ; ; ) {
+//         if ((status = fifo_.read(requests, BLOCK_FIFO_MAX_DEPTH, &count)) == ZX_OK) {
+//             break;
+//         }
+//         printf("%s:%u\n", __FUNCTION__, __LINE__);
+//         if (status != ZX_ERR_SHOULD_WAIT) {
+//             printf("%s:%u\n", __FUNCTION__, __LINE__);
+//             printf("read error\n");
+//             return ZX_ERR_IO;
+//         }
+//         zx_signals_t signals = ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED |
+//                                kSignalFifoTerminate | kSignalFifoOpsComplete;
+//         zx_signals_t seen;
+//         status = fifo_.wait_one(signals, zx::time::infinite(), &seen);
+//         if (status == ZX_ERR_CANCELED) {
+//             // Fifo closed locally by shutdown routine.
+//             return ZX_ERR_CANCELED;
+//         }
+//         if (status != ZX_OK) {
+//             return ZX_ERR_IO;
+//         }
+//             // if (seen & kSignalFifoOpsComplete) {
+//             //     BarrierComplete();
+//             //     continue;
+//             // }
+//         if ((seen & ZX_FIFO_PEER_CLOSED) || (seen & kSignalFifoTerminate)) {
+//             printf("%s:%u\n", __FUNCTION__, __LINE__);
+//             return ZX_ERR_CANCELED;  // todo: switch to ZX_ERR_PEER_CLOSED
+//         }
+//     }
+//     // todo: make this not suck.
+//     memset(op_list, 0, sizeof(op_list[0]) * max_ops);
+//     fbl::AllocChecker ac;
+//     status = ZX_OK;
+//     for (size_t i = 0; i < count; i++) {
+//         RequestWrapper* wrapper = new (&ac) RequestWrapper(&requests[i]);
+//         if (!ac.check()) {
+//             status = ZX_ERR_IO;
+//             printf("%s:%u\n", __FUNCTION__, __LINE__);
+//             break;
+//         }
+//         op_list[i] = &wrapper->op_;
+//     }
+//     if (status != ZX_OK) {
+//         for (size_t i = 0; i < max_ops; i++) {
+//             if (op_list[i] != nullptr) {
+//                 delete op_list[i];
+//                 op_list[i] = nullptr;
+//             }
+//         }
+//         count = 0;
+//     }
+//     *op_count = static_cast<uint32_t>(count);
+//     return status;
+// }
 
 
 zx_status_t BlockServer::FindVmoIDLocked(vmoid_t* out) {
@@ -309,41 +318,76 @@ void BlockServer::TxnEnd() {
     }
 }
 
-void BlockServer::InQueueDrainer() {
-    while (true) {
-        if (in_queue_.is_empty()) {
-            return;
-        }
+zx_status_t BlockServer::Service(io_op_t* op) {
+    block_msg_extra_t* extra = containerof(op, block_msg_extra_t, iop);
+    block_msg_t* msg = containerof(extra, block_msg_t, extra);
 
-        auto msg = in_queue_.begin();
-        if (deferred_barrier_before_) {
-            msg->op.command |= BLOCK_FL_BARRIER_BEFORE;
-            deferred_barrier_before_ = false;
-        }
-
-        if (msg->op.command & BLOCK_FL_BARRIER_BEFORE) {
-            barrier_in_progress_.store(true);
-            if (pending_count_.load() > 0) {
-                return;
-            }
-            // Since we're the only thread that could add to pending
-            // count, we reliably know it has terminated.
-            barrier_in_progress_.store(false);
-        }
-        if (msg->op.command & BLOCK_FL_BARRIER_AFTER) {
-            deferred_barrier_before_ = true;
-        }
-        pending_count_.fetch_add(1);
-        in_queue_.pop_front();
-        // Underlying block device drivers should not see block barriers
-        // which are already handled by the block midlayer.
-        //
-        // This may be altered in the future if block devices
-        // are capable of implementing hardware barriers.
-        msg->op.command &= ~(BLOCK_FL_BARRIER_BEFORE | BLOCK_FL_BARRIER_AFTER);
-        bp_->Queue(&msg->op, BlockCompleteCb, &*msg);
+#if 0
+    // TODO: remove barrier handling from this.
+    if (deferred_barrier_before_) {
+        msg->op.command |= BLOCK_FL_BARRIER_BEFORE;
+        deferred_barrier_before_ = false;
     }
+    if (msg->op.command & BLOCK_FL_BARRIER_BEFORE) {
+        // barrier_in_progress_.store(true);
+        // if (pending_count_.load() > 0) {
+        //     return;
+        // }
+        // Since we're the only thread that could add to pending
+        // count, we reliably know it has terminated.
+        // barrier_in_progress_.store(false);
+    }
+    if (msg->op.command & BLOCK_FL_BARRIER_AFTER) {
+        deferred_barrier_before_ = true;
+    }
+    // pending_count_.fetch_add(1);
+
+    // Underlying block device drivers should not see block barriers
+    // which are already handled by the block midlayer.
+    //
+    // This may be altered in the future if block devices
+    // are capable of implementing hardware barriers.
+    msg->op.command &= ~(BLOCK_FL_BARRIER_BEFORE | BLOCK_FL_BARRIER_AFTER);
+#endif
+    bp_->Queue(&msg->op, BlockCompleteCb, &*msg);
+    return ZX_ERR_ASYNC; // Enqueued.
 }
+
+// void BlockServer::InQueueDrainer() {
+//     while (true) {
+//         if (in_queue_.is_empty()) {
+//             return;
+//         }
+
+//         auto msg = in_queue_.begin();
+//         if (deferred_barrier_before_) {
+//             msg->op.command |= BLOCK_FL_BARRIER_BEFORE;
+//             deferred_barrier_before_ = false;
+//         }
+
+//         if (msg->op.command & BLOCK_FL_BARRIER_BEFORE) {
+//             barrier_in_progress_.store(true);
+//             if (pending_count_.load() > 0) {
+//                 return;
+//             }
+//             // Since we're the only thread that could add to pending
+//             // count, we reliably know it has terminated.
+//             barrier_in_progress_.store(false);
+//         }
+//         if (msg->op.command & BLOCK_FL_BARRIER_AFTER) {
+//             deferred_barrier_before_ = true;
+//         }
+//         pending_count_.fetch_add(1);
+//         in_queue_.pop_front();
+//         // Underlying block device drivers should not see block barriers
+//         // which are already handled by the block midlayer.
+//         //
+//         // This may be altered in the future if block devices
+//         // are capable of implementing hardware barriers.
+//         msg->op.command &= ~(BLOCK_FL_BARRIER_BEFORE | BLOCK_FL_BARRIER_AFTER);
+//         bp_->Queue(&msg->op, BlockCompleteCb, &*msg);
+//     }
+// }
 
 zx_status_t BlockServer::Create(ddk::BlockProtocolClient* bp, fzl::fifo<block_fifo_request_t,
                                 block_fifo_response_t>* fifo_out,
@@ -423,6 +467,7 @@ zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) 
 
     const uint32_t max_xfer = info_.max_transfer_size / bsz;
     if (max_xfer != 0 && max_xfer < request->length) {
+        ZX_DEBUG_ASSERT(false);
         uint32_t len_remaining = request->length;
         uint64_t vmo_offset = request->vmo_offset;
         uint64_t dev_offset = request->dev_offset;
@@ -467,10 +512,10 @@ zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) 
         groups_[group].CtrAdd(sub_txns - 1);
         ZX_DEBUG_ASSERT(len_remaining == 0);
 
-        in_queue_.splice(in_queue_.end(), sub_txns_queue);
+        intake_queue_.splice(intake_queue_.end(), sub_txns_queue);
     } else {
         InQueueAdd(iobuf->vmo(), request->length, request->vmo_offset,
-                   request->dev_offset, msg.release(), &in_queue_);
+                   request->dev_offset, msg.release(), &intake_queue_);
     }
     return ZX_OK;
 }
@@ -502,11 +547,11 @@ zx_status_t BlockServer::ProcessFlushRequest(block_fifo_request_t* request) {
     extra->reqid = request->reqid;
     extra->group = request->group;
     msg.op()->command = OpcodeToCommand(request->opcode);
-    InQueueAdd(ZX_HANDLE_INVALID, 0, 0, 0, msg.release(), &in_queue_);
+    InQueueAdd(ZX_HANDLE_INVALID, 0, 0, 0, msg.release(), &intake_queue_);
     return ZX_OK;
 }
 
-void BlockServer::ProcessRequest(block_fifo_request_t* request) {
+zx_status_t BlockServer::ProcessRequest(block_fifo_request_t* request) {
     zx_status_t status;
     switch (request->opcode & BLOCKIO_OP_MASK) {
     case BLOCKIO_READ:
@@ -527,53 +572,107 @@ void BlockServer::ProcessRequest(block_fifo_request_t* request) {
     default:
         fprintf(stderr, "Unrecognized Block Server operation: %x\n",
                 request->opcode);
-        TxnComplete(ZX_ERR_NOT_SUPPORTED, request->reqid, request->group);
+        status = ZX_ERR_NOT_SUPPORTED;
+        TxnComplete(status, request->reqid, request->group);
+        break;
     }
+    return status;
 }
 
-zx_status_t BlockServer::Serve() {
-    zx_status_t status;
+zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait) {
+    size_t max_ops = *op_count;
+    if (max_ops == 0) {
+        return ZX_OK;
+    }
+    uint32_t i;
+    for (i = 0; i < max_ops; i++) {
+        block_msg_t* msg = intake_queue_.pop_front();
+        if (msg == NULL) {
+            break;
+        }
+        op_list[i] = &msg->extra.iop;
+        // in_queue_.push_back(msg);
+    }
+    if (i > 0) {
+        printf("INTAKE: transferred %u from in queue\n", i);
+        *op_count = i;
+        return ZX_OK;
+    }
+
+    size_t actual;
     block_fifo_request_t requests[BLOCK_FIFO_MAX_DEPTH];
-    size_t count;
-    while (true) {
-        // Attempt to drain as much of the input queue as possible
-        // before (potentially) blocking in Read.
-        InQueueDrainer();
-
-        if ((status = Read(requests, &count) != ZX_OK)) {
-            return status;
-        }
-
-        for (size_t i = 0; i < count; i++) {
-            bool wants_reply = requests[i].opcode & BLOCKIO_GROUP_LAST;
-            bool use_group = requests[i].opcode & BLOCKIO_GROUP_ITEM;
-
-            reqid_t reqid = requests[i].reqid;
-
-            if (use_group) {
-                groupid_t group = requests[i].group;
-                if (group >= MAX_TXN_GROUP_COUNT) {
-                    // Operation which is not accessing a valid group.
-                    if (wants_reply) {
-                        OutOfBandRespond(fifo_, ZX_ERR_IO, reqid, group);
-                    }
-                    continue;
-                }
-
-                // Enqueue the message against the transaction group.
-                status = groups_[group].Enqueue(wants_reply, reqid);
-                if (status != ZX_OK) {
-                    TxnComplete(status, reqid, group);
-                    continue;
-                }
-            } else {
-                requests[i].group = kNoGroup;
-            }
-
-            ProcessRequest(&requests[i]);
-        }
+    zx_status_t status = Read(requests, BLOCK_FIFO_MAX_DEPTH, &actual);
+    if (status == ZX_ERR_PEER_CLOSED) {
+        status = ZX_ERR_CANCELED;
     }
+    if (status != ZX_OK) {
+        return status;
+    }
+    printf("read %zu requests\n", actual);
+    for (size_t i = 0; i < actual; i++) {
+        // bool wants_reply = requests[i].opcode & BLOCKIO_GROUP_LAST;
+        // reqid_t reqid = requests[i].reqid;
+        bool use_group = requests[i].opcode & BLOCKIO_GROUP_ITEM;
+        ZX_DEBUG_ASSERT(use_group == false);
+
+        requests[i].group = kNoGroup;
+        ProcessRequest(&requests[i]);
+    }
+    for (i = 0; i < max_ops; i++) {
+        block_msg_t* msg = intake_queue_.pop_front();
+        if (msg == NULL) {
+            break;
+        }
+        op_list[i] = &msg->extra.iop;
+        // intake_queue_.push_back(msg);
+    }
+    *op_count = i;
+    return ZX_OK;
 }
+
+// zx_status_t BlockServer::Serve() {
+//     zx_status_t status;
+//     block_fifo_request_t requests[BLOCK_FIFO_MAX_DEPTH];
+//     size_t count;
+//     while (true) {
+//         // Attempt to drain as much of the input queue as possible
+//         // before (potentially) blocking in Read.
+//         InQueueDrainer();
+
+//         if ((status = Read(requests, &count) != ZX_OK)) {
+//             return status;
+//         }
+
+//         for (size_t i = 0; i < count; i++) {
+//             bool wants_reply = requests[i].opcode & BLOCKIO_GROUP_LAST;
+//             bool use_group = requests[i].opcode & BLOCKIO_GROUP_ITEM;
+
+//             reqid_t reqid = requests[i].reqid;
+
+//             if (use_group) {
+//                 groupid_t group = requests[i].group;
+//                 if (group >= MAX_TXN_GROUP_COUNT) {
+//                     // Operation which is not accessing a valid group.
+//                     if (wants_reply) {
+//                         OutOfBandRespond(fifo_, ZX_ERR_IO, reqid, group);
+//                     }
+//                     continue;
+//                 }
+
+//                 // Enqueue the message against the transaction group.
+//                 status = groups_[group].Enqueue(wants_reply, reqid);
+//                 if (status != ZX_OK) {
+//                     TxnComplete(status, reqid, group);
+//                     continue;
+//                 }
+//             } else {
+//                 requests[i].group = kNoGroup;
+//             }
+
+//             ProcessRequest(&requests[i]);
+//         }
+//     }
+// }
 
 BlockServer::BlockServer(ddk::BlockProtocolClient* bp) :
     bp_(bp), block_op_size_(0), pending_count_(0), barrier_in_progress_(false),
@@ -590,7 +689,7 @@ BlockServer::BlockServer(ddk::BlockProtocolClient* bp) :
 
 BlockServer::~BlockServer() {
     ZX_ASSERT(pending_count_.load() == 0);
-    ZX_ASSERT(in_queue_.is_empty());
+    ZX_ASSERT(intake_queue_.is_empty());
 }
 
 void BlockServer::SignalFifoCancel() {
@@ -607,18 +706,19 @@ void BlockServer::Shutdown() {
     // fifo_.wait_one(signals, zx::time::infinite(), &seen);
 }
 
-zx_status_t BlockServer::OpAcquire(void* context, ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait) {
+zx_status_t BlockServer::OpAcquire(void* context, io_op_t** op_list, uint32_t* op_count, bool wait) {
     printf("acquire op\n");
     BlockServer* bs = static_cast<BlockServer*>(context);
-    return bs->ReadOps(op_list, op_count, wait);
+    return bs->Intake(op_list, op_count, wait);
 }
 
-zx_status_t BlockServer::OpIssue(void* context, ioqueue::io_op_t* op) {
+zx_status_t BlockServer::OpIssue(void* context, io_op_t* op) {
     printf("issue op\n");
-    return ZX_OK;
+    BlockServer* bs = static_cast<BlockServer*>(context);
+    return bs->Service(op);
 }
 
-void BlockServer::OpRelease(void* context, ioqueue::io_op_t* op) {
+void BlockServer::OpRelease(void* context, io_op_t* op) {
     printf("release op\n");
 }
 

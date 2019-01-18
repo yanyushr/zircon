@@ -30,6 +30,8 @@
 #include "io-queue.h"
 #include "txn-group.h"
 
+using io_op_t = ioqueue::io_op_t;
+
 // Represents the mapping of "vmoid --> VMO"
 class IoBuffer : public fbl::WAVLTreeContainable<fbl::RefPtr<IoBuffer>>,
                  public fbl::RefCounted<IoBuffer> {
@@ -68,6 +70,7 @@ struct block_msg_extra {
     BlockServer* server;
     reqid_t reqid;
     groupid_t group;
+    io_op_t iop;
 };
 
 // A single unit of work transmitted to the underlying block layer.
@@ -122,7 +125,6 @@ public:
         return *this;
     }
 
-
     ~BlockMsg() {
         reset();
     }
@@ -153,7 +155,7 @@ public:
         fbl::unique_ptr<BlockServer>* out);
 
     // Starts the BlockServer using the current thread
-    zx_status_t Serve() TA_EXCL(server_lock_);
+    // zx_status_t Serve() TA_EXCL(server_lock_);
     zx_status_t AttachVmo(zx::vmo vmo, vmoid_t* out) TA_EXCL(server_lock_);
     ioqueue::QueueOps* GetOps() { return &ops_; }
 
@@ -178,7 +180,7 @@ private:
     BlockServer(ddk::BlockProtocolClient* bp);
 
     // Helper for processing a single message read from the FIFO.
-    void ProcessRequest(block_fifo_request_t* request);
+    zx_status_t ProcessRequest(block_fifo_request_t* request);
     zx_status_t ProcessReadWriteRequest(block_fifo_request_t* request) TA_EXCL(server_lock_);
     zx_status_t ProcessCloseVmoRequest(block_fifo_request_t* request) TA_EXCL(server_lock_);
     zx_status_t ProcessFlushRequest(block_fifo_request_t* request);
@@ -191,26 +193,26 @@ private:
 
     // Functions that read from the fifo and invoke the queue drainer.
     // Should not be invoked concurrently.
-    zx_status_t Read(block_fifo_request_t* requests, size_t* count);
+    zx_status_t Read(block_fifo_request_t* requests, size_t max, size_t* actual);
     void TerminateQueue();
 
     // Attempts to enqueue all operations on the |in_queue_|. Stops
     // when either the queue is empty, or a BARRIER_BEFORE is reached and
     // operations are in-flight.
-    void InQueueDrainer();
+    // void InQueueDrainer();
 
     zx_status_t FindVmoIDLocked(vmoid_t* out) TA_REQ(server_lock_);
 
     // Called indirectly by Queue ops.
-    zx_status_t ReadOps(ioqueue::io_op_t** op_list, uint32_t* op_count, bool wait);
+    zx_status_t Intake(io_op_t** op_list, uint32_t* op_count, bool wait);
+    zx_status_t Service(io_op_t* op);
     void SignalFifoCancel();
 
-
     // Queue ops
-    static zx_status_t OpAcquire(void* context, ioqueue::io_op_t** op_list, uint32_t* op_count,
+    static zx_status_t OpAcquire(void* context, io_op_t** op_list, uint32_t* op_count,
                                   bool wait);
-    static zx_status_t OpIssue(void* context, ioqueue::io_op_t* op);
-    static void OpRelease(void* context, ioqueue::io_op_t* op);
+    static zx_status_t OpIssue(void* context, io_op_t* op);
+    static void OpRelease(void* context, io_op_t* op);
     static void OpCancelAcquire(void* context);
     static void FatalFromQueue(void* context);
 
@@ -222,8 +224,8 @@ private:
 
     // BARRIER_AFTER is implemented by sticking "BARRIER_BEFORE" on the
     // next operation that arrives.
-    bool deferred_barrier_before_ = false;
-    BlockMsgQueue in_queue_;
+    // bool deferred_barrier_before_ = false;
+    BlockMsgQueue intake_queue_;
     std::atomic<size_t> pending_count_;
     std::atomic<bool> barrier_in_progress_;
     TransactionGroup groups_[MAX_TXN_GROUP_COUNT];
