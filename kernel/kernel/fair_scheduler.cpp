@@ -54,7 +54,7 @@ using ffl::ToPrecision;
 
 namespace {
 
-#if 0
+#if 1
 constexpr SchedWeight kMinWeight = ffl::FromRatio(LOWEST_PRIORITY + 1, NUM_PRIORITIES);
 constexpr SchedWeight kReciprocalMinWeight = 1 / kMinWeight;
 #endif
@@ -102,7 +102,7 @@ void FairScheduler::Dump() {
            virtual_time_.raw_value(), scheduling_period_ns_.raw_value());
 
     if (active_thread_ != nullptr) {
-      const FairTaskState* const state = &active_thread_->fair_task_state;
+        const FairTaskState* const state = &active_thread_->fair_task_state;
         printf("\t-> name=%s weight=%x vstart=%ld vfinish=%ld time_slice_ns=%ld\n",
                active_thread_->name,
                state->effective_weight().raw_value(),
@@ -172,6 +172,8 @@ thread_t* FairScheduler::NextThread(thread_t* current_thread, bool timeslice_exp
 }
 
 cpu_num_t FairScheduler::FindTargetCpu(thread_t* thread) {
+    TraceDuration trace{"find_target: cpu,avail"_stringref, true};
+
     const cpu_mask_t current_cpu_mask = cpu_num_to_mask(arch_curr_cpu_num());
     const cpu_mask_t last_cpu_mask = cpu_num_to_mask(thread->last_cpu);
     const cpu_mask_t affinity_mask = thread->cpu_affinity;
@@ -186,7 +188,7 @@ cpu_num_t FairScheduler::FindTargetCpu(thread_t* thread) {
                      "thread=%s affinity=%x active=%x idle=%x arch_ints_disabled=%d",
                      thread->name, affinity_mask, active_mask, idle_mask, arch_ints_disabled());
 
-    LOCAL_KTRACE2("find_target", mp_get_online_mask(), active_mask);
+    LOCAL_KTRACE2("target_mask: online,active", mp_get_online_mask(), active_mask);
 
     cpu_num_t target_cpu;
     cpu_num_t least_loaded_cpu;
@@ -223,24 +225,25 @@ cpu_num_t FairScheduler::FindTargetCpu(thread_t* thread) {
     }
 
     SCHED_LTRACEF("thread=%s target_cpu=%d\n", thread->name, least_loaded_cpu);
-    LOCAL_KTRACE2("target_cpu", least_loaded_cpu, available_mask);
+    trace.End(least_loaded_cpu, available_mask);
     return least_loaded_cpu;
 }
 
 void FairScheduler::UpdateTimeline(SchedTime now) {
+    TraceDuration trace{"update_vtime"_stringref, true};
+
     const Expression runtime_ns = now - last_update_time_ns_;
     last_update_time_ns_ = now;
 
     if (weight_total_ > SchedWeight{FromInteger(0)}) {
-      virtual_time_ += runtime_ns;
+        virtual_time_ += runtime_ns;
     }
 
-    LOCAL_KTRACE2("update_global_timeline", Round<uint64_t>(runtime_ns),
-                  Round<uint64_t>(virtual_time_));
+    trace.End(Round<uint64_t>(runtime_ns), Round<uint64_t>(virtual_time_));
 }
 
 void FairScheduler::RescheduleCommon(SchedTime now) {
-    TraceDuration("reschedule_common"_stringref, true);
+    TraceDuration trace{"reschedule_common"_stringref, true};
 
     const cpu_num_t current_cpu = arch_curr_cpu_num();
     thread_t* const current_thread = get_current_thread();
@@ -305,10 +308,10 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
         SCHED_LTRACEF("Stop preemption timer: current=%s next=%s\n",
                       current_thread->name, next_thread->name);
         timer_preempt_cancel();
-    } else {
+    } else if (timeslice_expired) {
         // Update the preemption time based on the time slice.
-        //FairTaskState* const next_state = &next_thread->fair_task_state;
-        absolute_deadline_ns_ = now + minimum_granularity_ns_; //next_state->time_slice_ns_;
+        FairTaskState* const next_state = &next_thread->fair_task_state;
+        absolute_deadline_ns_ = now + next_state->time_slice_ns_;
 
         LOCAL_KTRACE2("start_preemption: now,deadline",
                       Round<uint64_t>(now),
@@ -324,7 +327,7 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
         LOCAL_KTRACE2("reschedule current: count,slice",
                       runnable_task_count_,
                       Round<uint64_t>(current_thread->fair_task_state.time_slice_ns_));
-        LOCAL_KTRACE2("reschedule next: weight_total,slice",
+        LOCAL_KTRACE2("reschedule next: wsum,slice",
                       weight_total_.raw_value(),
                       Round<uint64_t>(next_thread->fair_task_state.time_slice_ns_));
 
@@ -358,6 +361,8 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
 }
 
 void FairScheduler::UpdatePeriod() {
+    TraceDuration trace{"update_period"_stringref, true};
+
     DEBUG_ASSERT(runnable_task_count_ >= 0);
     DEBUG_ASSERT(minimum_granularity_ns_ > 0);
     DEBUG_ASSERT(peak_latency_ns_ > 0);
@@ -372,13 +377,15 @@ void FairScheduler::UpdatePeriod() {
     const int64_t period_grans = num_tasks > normal_tasks ? num_tasks : normal_tasks;
     scheduling_period_ns_ = period_grans * minimum_granularity_ns_;
 
-    LOCAL_KTRACE2("update_period", Round<uint64_t>(scheduling_period_ns_), num_tasks);
-
     SCHED_LTRACEF("num_tasks=%ld peak_tasks=%ld normal_tasks=%ld period_ns=%ld\n",
                   num_tasks, peak_tasks, normal_tasks, scheduling_period_ns_.raw_value());
+
+    trace.End(Round<uint64_t>(scheduling_period_ns_), num_tasks);
 }
 
 void FairScheduler::NextThreadTimeslice(thread_t* thread) {
+    TraceDuration trace{"next_timeslice: s,w"_stringref, true};
+
     if (thread_is_idle(thread) || thread->state == THREAD_DEATH) {
         return;
     }
@@ -389,18 +396,18 @@ void FairScheduler::NextThreadTimeslice(thread_t* thread) {
     state->time_slice_ns_ = scheduling_period_ns_ * state->effective_weight() / weight_total_;
     DEBUG_ASSERT(state->time_slice_ns_ > 0);
 
-    LOCAL_KTRACE2("next_timeslice: slice,weight",
-                  Round<uint64_t>(state->time_slice_ns_),
-                  state->effective_weight().raw_value());
-
     SCHED_LTRACEF("name=%s weight_total=%x weight=%x time_slice_ns=%ld\n",
                   thread->name,
                   weight_total_.raw_value(),
                   state->effective_weight().raw_value(),
                   state->time_slice_ns_.raw_value());
+
+    trace.End(Round<uint64_t>(state->time_slice_ns_), state->effective_weight().raw_value());
 }
 
 void FairScheduler::UpdateThreadTimeline(thread_t* thread) {
+    TraceDuration trace{"update_timeline: vs,vf"_stringref, true};
+
     if (thread_is_idle(thread) || thread->state == THREAD_DEATH) {
         return;
     }
@@ -410,7 +417,7 @@ void FairScheduler::UpdateThreadTimeline(thread_t* thread) {
     // Update virtual timeline.
     state->virtual_start_time_ = Max(state->virtual_finish_time_, virtual_time_);
 
-    const SchedDuration delta_norm = state->time_slice_ns_ / state->effective_weight();
+    const SchedDuration delta_norm = state->time_slice_ns_ / (kReciprocalMinWeight * state->effective_weight());
     state->virtual_finish_time_ = state->virtual_start_time_ + delta_norm;
 
     DEBUG_ASSERT_MSG(state->virtual_start_time_ < state->virtual_finish_time_,
@@ -419,19 +426,20 @@ void FairScheduler::UpdateThreadTimeline(thread_t* thread) {
                      state->virtual_finish_time_.raw_value(),
                      delta_norm.raw_value());
 
-    LOCAL_KTRACE2("update_timeline: vs,vf",
-                  Round<uint64_t>(state->virtual_start_time_),
-                  Round<uint64_t>(state->virtual_finish_time_));
-
     SCHED_LTRACEF("name=%s vstart=%ld vfinish=%ld lag=%ld vtime=%ld\n",
                   thread->name,
                   state->virtual_start_time_.raw_value(),
                   state->virtual_finish_time_.raw_value(),
                   state->lag_time_ns_.raw_value(),
                   virtual_time_.raw_value());
+
+    trace.End(Round<uint64_t>(state->virtual_start_time_),
+              Round<uint64_t>(state->virtual_finish_time_));
 }
 
 void FairScheduler::QueueThread(thread_t* thread) {
+    TraceDuration trace{"queue_thread"_stringref, true};
+
     DEBUG_ASSERT(thread->state == THREAD_READY);
     SCHED_LTRACEF("QueueThread: thread=%s\n", thread->name);
 
@@ -443,6 +451,8 @@ void FairScheduler::QueueThread(thread_t* thread) {
 }
 
 void FairScheduler::Insert(SchedTime now, thread_t* thread) {
+    TraceDuration trace{"insert"_stringref, true};
+
     DEBUG_ASSERT(thread->state == THREAD_READY);
     DEBUG_ASSERT(!thread_is_idle(thread));
 
@@ -470,6 +480,8 @@ void FairScheduler::Insert(SchedTime now, thread_t* thread) {
 }
 
 void FairScheduler::Remove(thread_t* thread) {
+    TraceDuration trace{"remove"_stringref, true};
+
     DEBUG_ASSERT(!thread_is_idle(thread));
 
     FairTaskState* const state = &thread->fair_task_state;
@@ -501,14 +513,14 @@ void FairScheduler::Remove(thread_t* thread) {
 }
 
 void FairScheduler::Block() {
+    TraceDuration trace{"sched_block"_stringref, true};
+
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
 
     thread_t* const current_thread = get_current_thread();
 
     DEBUG_ASSERT(current_thread->magic == THREAD_MAGIC);
     DEBUG_ASSERT(current_thread->state != THREAD_RUNNING);
-
-    LOCAL_KTRACE0("sched_block");
 
     const SchedTime now = CurrentTime();
     SCHED_LTRACEF("current=%s now=%ld\n", current_thread->name, now.raw_value());
@@ -517,10 +529,10 @@ void FairScheduler::Block() {
 }
 
 bool FairScheduler::Unblock(thread_t* thread) {
+    TraceDuration trace{"sched_unblock"_stringref, true};
+
     DEBUG_ASSERT(thread->magic == THREAD_MAGIC);
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
-
-    LOCAL_KTRACE0("sched_unblock");
 
     const SchedTime now = CurrentTime();
     SCHED_LTRACEF("thread=%s now=%ld\n", thread->name, now.raw_value());
@@ -540,12 +552,12 @@ bool FairScheduler::Unblock(thread_t* thread) {
 }
 
 bool FairScheduler::Unblock(list_node* list) {
+    TraceDuration trace{"sched_unblock_list"_stringref, true};
+
     DEBUG_ASSERT(list);
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
 
     const SchedTime now = CurrentTime();
-
-    LOCAL_KTRACE0("sched_unblock_list");
 
     cpu_mask_t cpus_to_reschedule_mask = 0;
     thread_t* thread;
@@ -587,12 +599,12 @@ void FairScheduler::UnblockIdle(thread_t* thread) {
 }
 
 void FairScheduler::Yield() {
+    TraceDuration trace{"sched_yield"_stringref, true};
+
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
 
     thread_t* current_thread = get_current_thread();
     DEBUG_ASSERT(!thread_is_idle(current_thread));
-
-    LOCAL_KTRACE0("sched_yield");
 
     const SchedTime now = CurrentTime();
     SCHED_LTRACEF("current=%s now=%ld\n", current_thread->name, now.raw_value());
@@ -602,6 +614,8 @@ void FairScheduler::Yield() {
 }
 
 void FairScheduler::Preempt() {
+    TraceDuration trace{"sched_preempt"_stringref, true};
+
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
 
     thread_t* current_thread = get_current_thread();
@@ -609,8 +623,6 @@ void FairScheduler::Preempt() {
 
     DEBUG_ASSERT(current_thread->curr_cpu == current_cpu);
     DEBUG_ASSERT(current_thread->last_cpu == current_thread->curr_cpu);
-
-    LOCAL_KTRACE0("sched_preempt");
 
     const SchedTime now = CurrentTime();
     SCHED_LTRACEF("current=%s now=%ld\n", current_thread->name, now.raw_value());
@@ -620,6 +632,8 @@ void FairScheduler::Preempt() {
 }
 
 void FairScheduler::Reschedule() {
+    TraceDuration trace{"sched_reschedule"_stringref, true};
+
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
 
     thread_t* current_thread = get_current_thread();
@@ -632,7 +646,6 @@ void FairScheduler::Reschedule() {
 
     DEBUG_ASSERT(current_thread->curr_cpu == current_cpu);
     DEBUG_ASSERT(current_thread->last_cpu == current_thread->curr_cpu);
-    LOCAL_KTRACE0("sched_reschedule");
 
     const SchedTime now = CurrentTime();
     SCHED_LTRACEF("current=%s now=%ld\n", current_thread->name, now.raw_value());
@@ -646,6 +659,8 @@ void FairScheduler::RescheduleInternal() {
 }
 
 void FairScheduler::TimerTick(SchedTime now) {
+    TraceDuration trace{"sched_timer_tick"_stringref, true};
+
     SchedTime absolute_deadline_ns;
 
     {
@@ -654,10 +669,11 @@ void FairScheduler::TimerTick(SchedTime now) {
         absolute_deadline_ns = queue->absolute_deadline_ns_;
     }
 
-    LOCAL_KTRACE2("sched_timer_tick", Round<uint64_t>(now), Round<uint64_t>(absolute_deadline_ns));
     SCHED_LTRACEF("now=%ld deadline=%ld\n", now.raw_value(), absolute_deadline_ns.raw_value());
 
     thread_preempt_set_pending();
+
+    trace.End(Round<uint64_t>(now), Round<uint64_t>(absolute_deadline_ns));
 }
 
 // Temporary compatibility with the thread layer.
