@@ -40,9 +40,9 @@
 #define LOCAL_KTRACE 0
 
 #if LOCAL_KTRACE
-#define LOCAL_KTRACE0(probe) ktrace_probe0(probe)
-#define LOCAL_KTRACE2(probe, x, y) ktrace_probe2(probe, x, y)
-#define LOCAL_KTRACE64(probe, x) ktrace_probe64(probe, x)
+#define LOCAL_KTRACE0(probe) ktrace_probe(probe)
+#define LOCAL_KTRACE2(probe, x, y) ktrace_probe(probe, x, y)
+#define LOCAL_KTRACE64(probe, x) ktrace_probe(probe, x)
 #else
 #define LOCAL_KTRACE0(probe)
 #define LOCAL_KTRACE2(probe, x, y)

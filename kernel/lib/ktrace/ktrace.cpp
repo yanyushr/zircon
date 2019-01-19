@@ -18,19 +18,55 @@
 #include <object/thread_dispatcher.h>
 #include <vm/vm_aspace.h>
 #include <zircon/thread_annotations.h>
+#include <fbl/alloc_checker.h>
 
 #define ktrace_timestamp() current_ticks();
 #define ktrace_ticks_per_ms() (ticks_per_second() / 1000)
+
+int StringRef::Register(StringRef* string_ref) {
+    // Return the id if the string ref is already registered.
+    int id = string_ref->id.load(std::memory_order_relaxed);
+    if (id != kInvalidId) {
+        return id;
+    }
+
+    // Try to set the id of the string ref. When there is a race with other
+    // threads or CPUs only one will succeed, in which case the id counter will
+    // harmlessly skip values equal to the number of agents racing between here
+    // and the check above.
+    const int new_id = id_counter_.fetch_add(1, std::memory_order_relaxed);
+    while (!string_ref->id.compare_exchange_weak(id, new_id,
+                                                 std::memory_order_relaxed,
+                                                 std::memory_order_relaxed)) {
+        // If another agent set the id first simply return the id.
+        if (id != kInvalidId && id != new_id)
+            return id;
+    }
+
+    ktrace_name_etc(TAG_PROBE_NAME, string_ref->id, 0, string_ref->string, true);
+
+    // Register the string ref in the global linked list. When there is a race
+    // above only the winning agent that set the id will continue to this point.
+    string_ref->next = head_.load(std::memory_order_relaxed);
+    while (!head_.compare_exchange_weak(string_ref->next, string_ref,
+                                        std::memory_order_release,
+                                        std::memory_order_relaxed)) {
+    }
+
+    return new_id;
+}
+
+std::atomic<int> StringRef::id_counter_{0};
+std::atomic<StringRef*> StringRef::head_{nullptr};
 
 // Generated struct that has the syscall index and name.
 static struct ktrace_syscall_info {
     uint32_t id;
     uint32_t nargs;
     const char* name;
-} kt_syscall_info [] = {
-    #include <zircon/syscall-ktrace-info.inc>
-    {0, 0, nullptr}
-};
+} kt_syscall_info[] = {
+#include <zircon/syscall-ktrace-info.inc>
+    {0, 0, nullptr}};
 
 void ktrace_report_syscalls(ktrace_syscall_info* call) {
     size_t ix = 0;
@@ -40,38 +76,26 @@ void ktrace_report_syscalls(ktrace_syscall_info* call) {
     }
 }
 
-static uint32_t probe_number = 1;
-
-extern ktrace_probe_info_t* const __start_ktrace_probe[];
-extern ktrace_probe_info_t* const __stop_ktrace_probe[];
-
 static fbl::Mutex probe_list_lock;
-static ktrace_probe_info_t* probe_list TA_GUARDED(probe_list_lock);
 
-static ktrace_probe_info_t* ktrace_find_probe(const char* name) TA_REQ(probe_list_lock) {
-    ktrace_probe_info_t* probe;
-    for (probe = probe_list; probe != nullptr; probe = probe->next) {
-        if (!strcmp(name, probe->name)) {
-            return probe;
+static StringRef* ktrace_find_probe(const char* name) TA_REQ(probe_list_lock) {
+    for (StringRef* ref = StringRef::head(); ref != nullptr; ref = ref->next) {
+        if (!strcmp(name, ref->string)) {
+            return ref;
         }
     }
     return nullptr;
 }
 
-static void ktrace_add_probe(ktrace_probe_info_t* probe) TA_REQ(probe_list_lock) {
-    if (probe->num == 0) {
-        probe->num = probe_number++;
-    }
-    probe->next = probe_list;
-    probe_list = probe;
-    ktrace_name_etc(TAG_PROBE_NAME, probe->num, 0, probe->name, true);
+static void ktrace_add_probe(StringRef* string_ref) TA_REQ(probe_list_lock) {
+    // Register and emit the string ref.
+    string_ref->GetId();
 }
 
 static void ktrace_report_probes(void) {
     fbl::AutoLock lock(&probe_list_lock);
-    ktrace_probe_info_t *probe;
-    for (probe = probe_list; probe != nullptr; probe = probe->next) {
-        ktrace_name_etc(TAG_PROBE_NAME, probe->num, 0, probe->name, true);
+    for (StringRef* ref = StringRef::head(); ref != nullptr; ref = ref->next) {
+        ktrace_name_etc(TAG_PROBE_NAME, ref->id, 0, ref->string, true);
     }
 }
 
@@ -132,6 +156,7 @@ ssize_t ktrace_read_user(void* ptr, uint32_t off, size_t len) {
 
 zx_status_t ktrace_control(uint32_t action, uint32_t options, void* ptr) {
     ktrace_state_t* ks = &KTRACE_STATE;
+
     switch (action) {
     case KTRACE_ACTION_START:
         options = KTRACE_GRP_TO_MASK(options);
@@ -140,6 +165,7 @@ zx_status_t ktrace_control(uint32_t action, uint32_t options, void* ptr) {
         ktrace_report_live_processes();
         ktrace_report_live_threads();
         break;
+
     case KTRACE_ACTION_STOP: {
         atomic_store(&ks->grpmask, 0);
         uint32_t n = ks->offset;
@@ -150,6 +176,7 @@ zx_status_t ktrace_control(uint32_t action, uint32_t options, void* ptr) {
         }
         break;
     }
+
     case KTRACE_ACTION_REWIND:
         // roll back to just after the metadata
         atomic_store(&ks->offset, KTRACE_RECSIZE * 2);
@@ -157,21 +184,37 @@ zx_status_t ktrace_control(uint32_t action, uint32_t options, void* ptr) {
         ktrace_report_probes();
         ktrace_report_vcpu_meta();
         break;
+
     case KTRACE_ACTION_NEW_PROBE: {
+        const char* const string_in = static_cast<const char*>(ptr);
+
         fbl::AutoLock lock(&probe_list_lock);
-        ktrace_probe_info_t* probe;
-        if ((probe = ktrace_find_probe((const char*) ptr)) != nullptr) {
-            return probe->num;
+        StringRef* ref = ktrace_find_probe(string_in);
+        if (ref != nullptr) {
+            return ref->id;
         }
-        probe = (ktrace_probe_info_t*) calloc(sizeof(*probe) + ZX_MAX_NAME_LEN, 1);
-        if (probe == nullptr) {
+
+        struct DynamicStringRef {
+            DynamicStringRef(const char* string) : string_ref{storage} {
+                memcpy(storage, string, sizeof(storage));
+            }
+
+            StringRef string_ref;
+            char storage[ZX_MAX_NAME_LEN];
+        };
+
+        // TODO(eieio,dje): Figure out how to constrain this to prevent abuse by
+        // creating huge numbers of unique probes.
+        fbl::AllocChecker alloc_checker;
+        DynamicStringRef* dynamic_ref = new (&alloc_checker) DynamicStringRef{string_in};
+        if (!alloc_checker.check()) {
             return ZX_ERR_NO_MEMORY;
         }
-        probe->name = (const char*) (probe + 1);
-        memcpy(probe + 1, ptr, ZX_MAX_NAME_LEN);
-        ktrace_add_probe(probe);
-        return probe->num;
+
+        ktrace_add_probe(&dynamic_ref->string_ref);
+        return dynamic_ref->string_ref.id;
     }
+
     default:
         return ZX_ERR_INVALID_ARGS;
     }
@@ -191,7 +234,7 @@ void ktrace_init(unsigned level) {
         return;
     }
 
-    mb *= (1024*1024);
+    mb *= (1024 * 1024);
 
     zx_status_t status;
     VmAspace* aspace = VmAspace::kernel_aspace();
@@ -207,19 +250,9 @@ void ktrace_init(unsigned level) {
 
     dprintf(INFO, "ktrace: buffer at %p (%u bytes)\n", ks->buffer, mb);
 
-    // register all static probes
-    {
-        fbl::AutoLock lock(&probe_list_lock);
-        for (auto probe = __start_ktrace_probe;
-             probe != __stop_ktrace_probe;
-             ++probe) {
-            ktrace_add_probe(*probe);
-        }
-    }
-
     // write metadata to the first two event slots
     uint64_t n = ktrace_ticks_per_ms();
-    ktrace_rec_32b_t* rec = (ktrace_rec_32b_t*) ks->buffer;
+    ktrace_rec_32b_t* rec = (ktrace_rec_32b_t*)ks->buffer;
     rec[0].tag = TAG_VERSION;
     rec[0].a = KTRACE_VERSION;
     rec[1].tag = TAG_TICKS_PER_MS;
@@ -242,7 +275,7 @@ void ktrace_init(unsigned level) {
     // serves to ensure that there will be at least one static probe
     // entry so that the __{start,stop}_ktrace_probe symbols above
     // will be defined by the linker.
-    ktrace_probe0("ktrace_ready");
+    ktrace_probe("ktrace_ready"_stringref);
 }
 
 void ktrace_tiny(uint32_t tag, uint32_t arg) {
@@ -254,7 +287,7 @@ void ktrace_tiny(uint32_t tag, uint32_t arg) {
             // if we arrive at the end, stop
             atomic_store(&ks->grpmask, 0);
         } else {
-            ktrace_header_t* hdr = (ktrace_header_t*) (ks->buffer + off);
+            ktrace_header_t* hdr = (ktrace_header_t*)(ks->buffer + off);
             hdr->ts = ktrace_timestamp();
             hdr->tag = tag;
             hdr->tid = arg;
@@ -262,7 +295,7 @@ void ktrace_tiny(uint32_t tag, uint32_t arg) {
     }
 }
 
-void* ktrace_open(uint32_t tag, bool in_irq) {
+void* ktrace_open(uint32_t tag, bool cpu_trace) {
     ktrace_state_t* ks = &KTRACE_STATE;
     if (!(tag & atomic_load(&ks->grpmask))) {
         return nullptr;
@@ -275,10 +308,10 @@ void* ktrace_open(uint32_t tag, bool in_irq) {
         return nullptr;
     }
 
-    ktrace_header_t* hdr = (ktrace_header_t*) (ks->buffer + off);
+    ktrace_header_t* hdr = (ktrace_header_t*)(ks->buffer + off);
     hdr->ts = ktrace_timestamp();
-    hdr->tag = KTRACE_TAG_SPARE(tag, in_irq ? 1 : 0);
-    hdr->tid = in_irq ? arch_curr_cpu_num() : (uint32_t)get_current_thread()->user_tid;
+    hdr->tag = KTRACE_TAG_FLAGS(tag, cpu_trace ? KTRACE_FLAGS_CPU : 0);
+    hdr->tid = cpu_trace ? arch_curr_cpu_num() : (uint32_t)get_current_thread()->user_tid;
     return hdr + 1;
 }
 
@@ -295,7 +328,7 @@ void ktrace_name_etc(uint32_t tag, uint32_t id, uint32_t arg, const char* name, 
             // if we arrive at the end, stop
             atomic_store(&ks->grpmask, 0);
         } else {
-            ktrace_rec_name_t* rec = (ktrace_rec_name_t*) (ks->buffer + off);
+            ktrace_rec_name_t* rec = (ktrace_rec_name_t*)(ks->buffer + off);
             rec->tag = tag;
             rec->id = id;
             rec->arg = arg;

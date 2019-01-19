@@ -38,9 +38,9 @@ using ffl::ToPrecision;
 #define LOCAL_KTRACE 1
 
 #if LOCAL_KTRACE
-#define LOCAL_KTRACE0(probe) ktrace_probe0(probe, true)
-#define LOCAL_KTRACE2(probe, x, y) ktrace_probe2(probe, x, y, true)
-#define LOCAL_KTRACE64(probe, x) ktrace_probe64(probe, x)
+#define LOCAL_KTRACE0(probe) ktrace_probe(KTRACE_STRING_REF(probe), true)
+#define LOCAL_KTRACE2(probe, x, y) ktrace_probe(KTRACE_STRING_REF(probe), x, y, true)
+#define LOCAL_KTRACE64(probe, x) ktrace_probe(KTRACE_STRING_REF(probe), x)
 #else
 #define LOCAL_KTRACE0(probe)
 #define LOCAL_KTRACE2(probe, x, y)
@@ -54,8 +54,10 @@ using ffl::ToPrecision;
 
 namespace {
 
+#if 0
 constexpr SchedWeight kMinWeight = ffl::FromRatio(LOWEST_PRIORITY + 1, NUM_PRIORITIES);
 constexpr SchedWeight kReciprocalMinWeight = 1 / kMinWeight;
+#endif
 
 // On ARM64 with safe-stack, it's no longer possible to use the unsafe-sp
 // after set_current_thread (we'd now see newthread's unsafe-sp instead!).
@@ -155,6 +157,7 @@ thread_t* FairScheduler::NextThread(thread_t* current_thread, bool timeslice_exp
             QueueThread(current_thread);
         } else {
             return current_thread;
+            //QueueThread(current_thread);
         }
     } else if (!is_active && !is_idle) {
         Remove(current_thread);
@@ -228,19 +231,19 @@ void FairScheduler::UpdateTimeline(SchedTime now) {
     const Expression runtime_ns = now - last_update_time_ns_;
     last_update_time_ns_ = now;
 
-    const SchedDuration rate = kReciprocalMinWeight * weight_total_;
-    if (rate > 0) {
-      virtual_time_ += runtime_ns / rate;
+    if (weight_total_ > SchedWeight{FromInteger(0)}) {
+      virtual_time_ += runtime_ns;
     }
 
-    LOCAL_KTRACE2("update_global_timeline", Round<uint32_t>(runtime_ns),
-                  Round<uint32_t>(virtual_time_));
+    LOCAL_KTRACE2("update_global_timeline", Round<uint64_t>(runtime_ns),
+                  Round<uint64_t>(virtual_time_));
 }
 
 void FairScheduler::RescheduleCommon(SchedTime now) {
+    TraceDuration("reschedule_common"_stringref, true);
+
     const cpu_num_t current_cpu = arch_curr_cpu_num();
     thread_t* const current_thread = get_current_thread();
-    //thread_t* const idle_thread = &percpu[current_cpu].idle_thread;
 
     DEBUG_ASSERT(arch_ints_disabled());
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
@@ -304,11 +307,12 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
         timer_preempt_cancel();
     } else {
         // Update the preemption time based on the time slice.
-        FairTaskState* const next_state = &next_thread->fair_task_state;
-        absolute_deadline_ns_ = now + next_state->time_slice_ns_;
+        //FairTaskState* const next_state = &next_thread->fair_task_state;
+        absolute_deadline_ns_ = now + minimum_granularity_ns_; //next_state->time_slice_ns_;
 
-        LOCAL_KTRACE2("start_preemption: now,deadline", Round<uint32_t>(now / 1000),
-                      Round<uint32_t>(absolute_deadline_ns_ / 1000));
+        LOCAL_KTRACE2("start_preemption: now,deadline",
+                      Round<uint64_t>(now),
+                      Round<uint64_t>(absolute_deadline_ns_));
 
         SCHED_LTRACEF("Start preemption timer: current=%s next=%s now=%ld deadline=%ld\n",
                       current_thread->name, next_thread->name, now.raw_value(),
@@ -318,11 +322,11 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
 
     if (next_thread != current_thread) {
         LOCAL_KTRACE2("reschedule current: count,slice",
-                      static_cast<uint32_t>(runnable_task_count_),
-                      Round<uint32_t>(current_thread->fair_task_state.time_slice_ns_));
+                      runnable_task_count_,
+                      Round<uint64_t>(current_thread->fair_task_state.time_slice_ns_));
         LOCAL_KTRACE2("reschedule next: weight_total,slice",
-                      static_cast<uint32_t>(weight_total_.raw_value()),
-                      Round<uint32_t>(next_thread->fair_task_state.time_slice_ns_));
+                      weight_total_.raw_value(),
+                      Round<uint64_t>(next_thread->fair_task_state.time_slice_ns_));
 
         ktrace(TAG_CONTEXT_SWITCH,
                static_cast<uint32_t>(next_thread->user_tid),
@@ -368,9 +372,7 @@ void FairScheduler::UpdatePeriod() {
     const int64_t period_grans = num_tasks > normal_tasks ? num_tasks : normal_tasks;
     scheduling_period_ns_ = period_grans * minimum_granularity_ns_;
 
-    LOCAL_KTRACE2("update_period",
-                  Round<uint32_t>(scheduling_period_ns_),
-                  static_cast<uint32_t>(num_tasks));
+    LOCAL_KTRACE2("update_period", Round<uint64_t>(scheduling_period_ns_), num_tasks);
 
     SCHED_LTRACEF("num_tasks=%ld peak_tasks=%ld normal_tasks=%ld period_ns=%ld\n",
                   num_tasks, peak_tasks, normal_tasks, scheduling_period_ns_.raw_value());
@@ -388,7 +390,7 @@ void FairScheduler::NextThreadTimeslice(thread_t* thread) {
     DEBUG_ASSERT(state->time_slice_ns_ > 0);
 
     LOCAL_KTRACE2("next_timeslice: slice,weight",
-                  Round<uint32_t>(state->time_slice_ns_),
+                  Round<uint64_t>(state->time_slice_ns_),
                   state->effective_weight().raw_value());
 
     SCHED_LTRACEF("name=%s weight_total=%x weight=%x time_slice_ns=%ld\n",
@@ -408,8 +410,7 @@ void FairScheduler::UpdateThreadTimeline(thread_t* thread) {
     // Update virtual timeline.
     state->virtual_start_time_ = Max(state->virtual_finish_time_, virtual_time_);
 
-    const Expression normalized_weight = kReciprocalMinWeight * state->effective_weight();
-    const SchedDuration delta_norm = state->time_slice_ns_ / normalized_weight;
+    const SchedDuration delta_norm = state->time_slice_ns_ / state->effective_weight();
     state->virtual_finish_time_ = state->virtual_start_time_ + delta_norm;
 
     DEBUG_ASSERT_MSG(state->virtual_start_time_ < state->virtual_finish_time_,
@@ -419,8 +420,8 @@ void FairScheduler::UpdateThreadTimeline(thread_t* thread) {
                      delta_norm.raw_value());
 
     LOCAL_KTRACE2("update_timeline: vs,vf",
-                  Round<uint32_t>(state->virtual_start_time_),
-                  Round<uint32_t>(state->virtual_finish_time_));
+                  Round<uint64_t>(state->virtual_start_time_),
+                  Round<uint64_t>(state->virtual_finish_time_));
 
     SCHED_LTRACEF("name=%s vstart=%ld vfinish=%ld lag=%ld vtime=%ld\n",
                   thread->name,
@@ -653,10 +654,8 @@ void FairScheduler::TimerTick(SchedTime now) {
         absolute_deadline_ns = queue->absolute_deadline_ns_;
     }
 
+    LOCAL_KTRACE2("sched_timer_tick", Round<uint64_t>(now), Round<uint64_t>(absolute_deadline_ns));
     SCHED_LTRACEF("now=%ld deadline=%ld\n", now.raw_value(), absolute_deadline_ns.raw_value());
-
-    LOCAL_KTRACE2("sched_timer_tick", Round<uint32_t>(now / 1000),
-                  Round<uint32_t>(absolute_deadline_ns / 1000));
 
     thread_preempt_set_pending();
 }
