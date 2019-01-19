@@ -21,13 +21,13 @@
 class FairScheduler {
 public:
     // Default minimum granularity of time slices.
-    static constexpr SchedDuration kDefaultMinimumGranularity = SchedMicroseconds(750);
+    static constexpr SchedDuration kDefaultMinimumGranularity = SchedUs(750);
 
     // Default target latency for a scheduling period.
-    static constexpr SchedDuration kDefaultTargetLatency = SchedMilliseconds(6);
+    static constexpr SchedDuration kDefaultTargetLatency = SchedMs(6);
 
     // Default peak latency for a scheduling period.
-    static constexpr SchedDuration kDefaultPeakLatency = SchedMilliseconds(10);
+    static constexpr SchedDuration kDefaultPeakLatency = SchedMs(10);
 
     FairScheduler() = default;
     ~FairScheduler() = default;
@@ -35,7 +35,7 @@ public:
     FairScheduler(const FairScheduler&) = delete;
     FairScheduler& operator=(const FairScheduler&) = delete;
 
-    static void InitializeThread(thread_t* thread, TaskWeight weight);
+    static void InitializeThread(thread_t* thread, SchedWeight weight);
     static void Block() TA_REQ(thread_lock);
     static void Yield() TA_REQ(thread_lock);
     static void Preempt() TA_REQ(thread_lock);
@@ -48,7 +48,7 @@ public:
 
     static void TimerTick(SchedTime now);
 
-    TaskWeight GetTotalWeight();
+    SchedWeight GetTotalWeight();
     size_t GetRunnableTasks();
 
     void Dump() TA_REQ(thread_lock);
@@ -92,37 +92,36 @@ private:
         static auto& node_state(thread_t& thread) { return thread.fair_task_state.run_queue_node_; }
     };
 
-    using RunQueue = fbl::WAVLTree<zx_time_t, thread_t*, TaskTraits, TaskTraits>;
-    RunQueue TA_GUARDED(thread_lock) run_queue_;
+    using RunQueue = fbl::WAVLTree<SchedTime, thread_t*, TaskTraits, TaskTraits>;
+    TA_GUARDED(thread_lock) RunQueue run_queue_;
+
+    TA_GUARDED(thread_lock) thread_t* active_thread_{nullptr};
 
     // Monotonically increasing counter to break ties when queuing tasks with
     // the same virtual finish time. This has the effect of placing newly
     // queued tasks behind already queued tasks with the same virtual finish
     // time. This is also necessary to guarantee uniqueness of the key as
     // required by the WAVLTree container.
-    uint64_t TA_GUARDED(thread_lock) generation_count_{0};
+    TA_GUARDED(thread_lock) uint64_t generation_count_{0};
 
     // Count of the threads running on this CPU, including threads in the run
     // queue and the currently running thread. Does not include the idle thread.
-    int32_t TA_GUARDED(thread_lock) runnable_task_count_{0};
+    TA_GUARDED(thread_lock) int32_t runnable_task_count_{0};
 
     // Total weights of threads running on this CPU, including threads in the
     // run queue and the currently running thread. Does not include the idle
     // thread.
-    TaskWeight TA_GUARDED(thread_lock) weight_total_{ffl::FromInteger(0)};
+    TA_GUARDED(thread_lock) SchedWeight weight_total_{ffl::FromInteger(0)};
 
-    SchedTime TA_GUARDED(thread_lock) virtual_time_ns_{SchedNanoseconds(0)};
-    SchedTime TA_GUARDED(thread_lock) last_update_time_ns_{SchedNanoseconds(0)};
-    SchedTime TA_GUARDED(thread_lock) absolute_deadline_ns_{SchedNanoseconds(0)};
-    SchedTime TA_GUARDED(thread_lock) last_reschedule_time_ns_{SchedNanoseconds(0)};
+    TA_GUARDED(thread_lock) SchedTime virtual_time_{SchedNs(0)};
+    TA_GUARDED(thread_lock) SchedTime last_update_time_ns_{SchedNs(0)};
+    TA_GUARDED(thread_lock) SchedTime absolute_deadline_ns_{SchedNs(0)};
+    TA_GUARDED(thread_lock) SchedTime last_reschedule_time_ns_{SchedNs(0)};
 
-    // Scheduling period in which every runnable task executes once, in units of
-    // minimum granularity (grans).
-    SchedDuration TA_GUARDED(thread_lock) scheduling_period_grans_{ffl::FromInteger(0)};
+    // Scheduling period in which every runnable task executes once.
+    TA_GUARDED(thread_lock) SchedDuration scheduling_period_ns_{kDefaultTargetLatency};
 
-    SchedDuration TA_GUARDED(thread_lock) minimum_granularity_ns_{kDefaultMinimumGranularity};
-    SchedDuration TA_GUARDED(thread_lock) target_latency_ns_{kDefaultTargetLatency};
-    SchedDuration TA_GUARDED(thread_lock) peak_latency_ns_{kDefaultPeakLatency};
-
-    int64_t TA_GUARDED(thread_lock) utilization_grans_{0};
+    TA_GUARDED(thread_lock) SchedDuration minimum_granularity_ns_{kDefaultMinimumGranularity};
+    TA_GUARDED(thread_lock) SchedDuration target_latency_ns_{kDefaultTargetLatency};
+    TA_GUARDED(thread_lock) SchedDuration peak_latency_ns_{kDefaultPeakLatency};
 };

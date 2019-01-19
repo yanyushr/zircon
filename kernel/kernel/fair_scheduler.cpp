@@ -54,8 +54,8 @@ using ffl::ToPrecision;
 
 namespace {
 
-constexpr TaskWeight kMinWeight = ffl::FromRatio(LOWEST_PRIORITY + 1, NUM_PRIORITIES);
-constexpr TaskWeight kReciprocalMinWeight = 1 / kMinWeight;
+constexpr SchedWeight kMinWeight = ffl::FromRatio(LOWEST_PRIORITY + 1, NUM_PRIORITIES);
+constexpr SchedWeight kReciprocalMinWeight = 1 / kMinWeight;
 
 // On ARM64 with safe-stack, it's no longer possible to use the unsafe-sp
 // after set_current_thread (we'd now see newthread's unsafe-sp instead!).
@@ -95,23 +95,32 @@ inline const char* ToString(enum thread_state state) {
 } // anonymous namespace
 
 void FairScheduler::Dump() {
-    const SchedTime virtual_time_grans = virtual_time_ns_ / minimum_granularity_ns_;
-
-    printf("\tweight_total=%x runnable_tasks=%d vtime=%ld/%ld\n",
+    printf("\tweight_total=%x runnable_tasks=%d vtime=%ld period=%ld\n",
            weight_total_.raw_value(), runnable_task_count_,
-           virtual_time_ns_.raw_value(), virtual_time_grans.raw_value());
+           virtual_time_.raw_value(), scheduling_period_ns_.raw_value());
+
+    if (active_thread_ != nullptr) {
+      const FairTaskState* const state = &active_thread_->fair_task_state;
+        printf("\t-> name=%s weight=%x vstart=%ld vfinish=%ld time_slice_ns=%ld\n",
+               active_thread_->name,
+               state->effective_weight().raw_value(),
+               state->virtual_start_time_.raw_value(),
+               state->virtual_finish_time_.raw_value(),
+               state->time_slice_ns_.raw_value());
+    }
 
     for (const thread_t& thread : run_queue_) {
         const FairTaskState* const state = &thread.fair_task_state;
-        printf("\tname=%s weight=%x vstart=%ld vfinish=%ld time_slice_grans=%ld\n",
-               thread.name, state->effective_weight().raw_value(),
-               state->virtual_start_time_grans_.raw_value(),
-               state->virtual_finish_time_grans_.raw_value(),
-               state->time_slice_grans_.raw_value());
+        printf("\t   name=%s weight=%x vstart=%ld vfinish=%ld time_slice_ns=%ld\n",
+               thread.name,
+               state->effective_weight().raw_value(),
+               state->virtual_start_time_.raw_value(),
+               state->virtual_finish_time_.raw_value(),
+               state->time_slice_ns_.raw_value());
     }
 }
 
-TaskWeight FairScheduler::GetTotalWeight() {
+SchedWeight FairScheduler::GetTotalWeight() {
     Guard<spin_lock_t, IrqSave> guard{ThreadLock::Get()};
     return weight_total_;
 }
@@ -129,7 +138,7 @@ FairScheduler* FairScheduler::Get(cpu_num_t cpu) {
     return &percpu[cpu].fair_runqueue;
 }
 
-void FairScheduler::InitializeThread(thread_t* thread, TaskWeight weight) {
+void FairScheduler::InitializeThread(thread_t* thread, SchedWeight weight) {
     new (&thread->fair_task_state) FairTaskState{weight};
 }
 
@@ -138,9 +147,20 @@ thread_t* FairScheduler::NextThread(thread_t* current_thread, bool timeslice_exp
     const bool is_idle = thread_is_idle(current_thread);
     const bool is_active = current_thread->state == THREAD_READY ||
                            current_thread->state == THREAD_RUNNING;
-    if (!is_idle && is_active && !timeslice_expired) {
-        return current_thread;
-    } else if (!run_queue_.is_empty()) {
+
+    if (is_active && !is_idle) {
+        if (timeslice_expired) {
+            NextThreadTimeslice(current_thread);
+            UpdateThreadTimeline(current_thread);
+            QueueThread(current_thread);
+        } else {
+            return current_thread;
+        }
+    } else if (!is_active && !is_idle) {
+        Remove(current_thread);
+    }
+
+    if (!run_queue_.is_empty()) {
         return run_queue_.pop_front();
     } else {
         const cpu_num_t current_cpu = arch_curr_cpu_num();
@@ -208,14 +228,13 @@ void FairScheduler::UpdateTimeline(SchedTime now) {
     const Expression runtime_ns = now - last_update_time_ns_;
     last_update_time_ns_ = now;
 
-    if (weight_total_ > 0) {
-        virtual_time_ns_ += runtime_ns; // / (kReciprocalMinWeight * weight_total_);
-    } else {
-        virtual_time_ns_ += runtime_ns;
+    const SchedDuration rate = kReciprocalMinWeight * weight_total_;
+    if (rate > 0) {
+      virtual_time_ += runtime_ns / rate;
     }
 
     LOCAL_KTRACE2("update_global_timeline", Round<uint32_t>(runtime_ns),
-                  Round<uint32_t>(virtual_time_ns_ / 1000));
+                  Round<uint32_t>(virtual_time_));
 }
 
 void FairScheduler::RescheduleCommon(SchedTime now) {
@@ -237,22 +256,7 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
 
     // Update the accounting for the thread that just ran.
     current_thread->runtime_ns += actual_runtime_ns.raw_value();
-
     const bool timeslice_expired = now >= absolute_deadline_ns_;
-    const bool is_idle = thread_is_idle(current_thread);
-    const bool is_active = current_thread->state == THREAD_READY ||
-                           current_thread->state == THREAD_RUNNING;
-
-    if (is_active && !is_idle) {
-        if (timeslice_expired) {
-            NextThreadTimeslice(current_thread);
-            UpdateThreadTimeline(current_thread);
-            QueueThread(current_thread);
-        }
-    } else if (!is_idle) {
-        current_thread->curr_cpu = INVALID_CPU;
-        Remove(current_thread);
-    }
 
     // Select a thread to run.
     thread_t* const next_thread = NextThread(current_thread, timeslice_expired);
@@ -269,6 +273,8 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
     next_thread->state = THREAD_RUNNING;
     next_thread->last_cpu = current_cpu;
     next_thread->curr_cpu = current_cpu;
+
+    active_thread_ = next_thread;
 
     if (next_thread != current_thread) {
         // Re-compute the timeslice for the new thread based on the latest state.
@@ -299,7 +305,7 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
     } else {
         // Update the preemption time based on the time slice.
         FairTaskState* const next_state = &next_thread->fair_task_state;
-        absolute_deadline_ns_ = now + next_state->time_slice_grans_ * minimum_granularity_ns_;
+        absolute_deadline_ns_ = now + next_state->time_slice_ns_;
 
         LOCAL_KTRACE2("start_preemption: now,deadline", Round<uint32_t>(now / 1000),
                       Round<uint32_t>(absolute_deadline_ns_ / 1000));
@@ -313,10 +319,10 @@ void FairScheduler::RescheduleCommon(SchedTime now) {
     if (next_thread != current_thread) {
         LOCAL_KTRACE2("reschedule current: count,slice",
                       static_cast<uint32_t>(runnable_task_count_),
-                      Round<uint32_t>(current_thread->fair_task_state.time_slice_grans_));
+                      Round<uint32_t>(current_thread->fair_task_state.time_slice_ns_));
         LOCAL_KTRACE2("reschedule next: weight_total,slice",
                       static_cast<uint32_t>(weight_total_.raw_value()),
-                      Round<uint32_t>(next_thread->fair_task_state.time_slice_grans_));
+                      Round<uint32_t>(next_thread->fair_task_state.time_slice_ns_));
 
         ktrace(TAG_CONTEXT_SWITCH,
                static_cast<uint32_t>(next_thread->user_tid),
@@ -359,14 +365,15 @@ void FairScheduler::UpdatePeriod() {
 
     // The scheduling period stretches when there are too many tasks to fit
     // within the target latency.
-    scheduling_period_grans_ = FromInteger(num_tasks > normal_tasks ? num_tasks : normal_tasks);
+    const int64_t period_grans = num_tasks > normal_tasks ? num_tasks : normal_tasks;
+    scheduling_period_ns_ = period_grans * minimum_granularity_ns_;
 
     LOCAL_KTRACE2("update_period",
-                  Round<uint32_t>(scheduling_period_grans_),
+                  Round<uint32_t>(scheduling_period_ns_),
                   static_cast<uint32_t>(num_tasks));
 
-    SCHED_LTRACEF("num_tasks=%ld peak_tasks=%ld normal_tasks=%ld period_grans=%ld\n",
-                  num_tasks, peak_tasks, normal_tasks, scheduling_period_grans_.raw_value());
+    SCHED_LTRACEF("num_tasks=%ld peak_tasks=%ld normal_tasks=%ld period_ns=%ld\n",
+                  num_tasks, peak_tasks, normal_tasks, scheduling_period_ns_.raw_value());
 }
 
 void FairScheduler::NextThreadTimeslice(thread_t* thread) {
@@ -376,23 +383,19 @@ void FairScheduler::NextThreadTimeslice(thread_t* thread) {
 
     FairTaskState* const state = &thread->fair_task_state;
 
-    // Calculate the relative portion of the scheduling period in units of
-    // minimum granularity.
-    ffl::Fixed<zx_duration_t, 5> time_slice_grans =
-        (scheduling_period_grans_ * state->effective_weight()) / weight_total_;
-
-    state->time_slice_grans_ = FromInteger(time_slice_grans.Ceiling());
-    DEBUG_ASSERT(state->time_slice_grans_ > 0);
+    // Calculate the relative portion of the scheduling period.
+    state->time_slice_ns_ = scheduling_period_ns_ * state->effective_weight() / weight_total_;
+    DEBUG_ASSERT(state->time_slice_ns_ > 0);
 
     LOCAL_KTRACE2("next_timeslice: slice,weight",
-                  Round<uint32_t>(state->time_slice_grans_),
+                  Round<uint32_t>(state->time_slice_ns_),
                   state->effective_weight().raw_value());
 
-    SCHED_LTRACEF("name=%s weight_total=%x weight=%x time_slice_grans=%ld\n",
+    SCHED_LTRACEF("name=%s weight_total=%x weight=%x time_slice_ns=%ld\n",
                   thread->name,
                   weight_total_.raw_value(),
                   state->effective_weight().raw_value(),
-                  state->time_slice_grans_.raw_value());
+                  state->time_slice_ns_.raw_value());
 }
 
 void FairScheduler::UpdateThreadTimeline(thread_t* thread) {
@@ -403,23 +406,28 @@ void FairScheduler::UpdateThreadTimeline(thread_t* thread) {
     FairTaskState* const state = &thread->fair_task_state;
 
     // Update virtual timeline.
-    const SchedTime virtual_time_grans = virtual_time_ns_ / minimum_granularity_ns_;
-    state->virtual_start_time_grans_ = Max(state->virtual_finish_time_grans_, virtual_time_grans);
+    state->virtual_start_time_ = Max(state->virtual_finish_time_, virtual_time_);
 
     const Expression normalized_weight = kReciprocalMinWeight * state->effective_weight();
-    const Expression delta_grans = state->time_slice_grans_ / normalized_weight;
-    state->virtual_finish_time_grans_ = state->virtual_start_time_grans_ + delta_grans;
+    const SchedDuration delta_norm = state->time_slice_ns_ / normalized_weight;
+    state->virtual_finish_time_ = state->virtual_start_time_ + delta_norm;
+
+    DEBUG_ASSERT_MSG(state->virtual_start_time_ < state->virtual_finish_time_,
+                     "vstart=%ld vfinish=%ld delta_norm=%ld\n",
+                     state->virtual_start_time_.raw_value(),
+                     state->virtual_finish_time_.raw_value(),
+                     delta_norm.raw_value());
 
     LOCAL_KTRACE2("update_timeline: vs,vf",
-                  Round<uint32_t>(state->virtual_start_time_grans_),
-                  Round<uint32_t>(state->virtual_finish_time_grans_));
+                  Round<uint32_t>(state->virtual_start_time_),
+                  Round<uint32_t>(state->virtual_finish_time_));
 
     SCHED_LTRACEF("name=%s vstart=%ld vfinish=%ld lag=%ld vtime=%ld\n",
                   thread->name,
-                  state->virtual_start_time_grans_.raw_value(),
-                  state->virtual_finish_time_grans_.raw_value(),
+                  state->virtual_start_time_.raw_value(),
+                  state->virtual_finish_time_.raw_value(),
                   state->lag_time_ns_.raw_value(),
-                  virtual_time_grans.raw_value());
+                  virtual_time_.raw_value());
 }
 
 void FairScheduler::QueueThread(thread_t* thread) {
@@ -442,17 +450,17 @@ void FairScheduler::Insert(SchedTime now, thread_t* thread) {
     // Ensure insertion happens only once, even if Unblock is called multiple times.
     if (state->OnInsert()) {
         runnable_task_count_++;
-        DEBUG_ASSERT(runnable_task_count_ >= 0);
+        DEBUG_ASSERT(runnable_task_count_ != 0);
 
-        UpdatePeriod();
         UpdateTimeline(now);
+        UpdatePeriod();
 
         thread->curr_cpu = arch_curr_cpu_num();
 
         // Factor this task into the run queue.
         weight_total_ += state->effective_weight();
-        DEBUG_ASSERT(weight_total_ > TaskWeight{FromInteger(0)});
-        //virtual_time_ns_ -= state->lag_time_ns_ / weight_total_;
+        DEBUG_ASSERT(weight_total_ > SchedWeight{FromInteger(0)});
+        //virtual_time_ -= state->lag_time_ns_ / weight_total_;
 
         NextThreadTimeslice(thread);
         UpdateThreadTimeline(thread);
@@ -468,15 +476,20 @@ void FairScheduler::Remove(thread_t* thread) {
 
     // Ensure that removal happens only once, even if Block() is called multiple times.
     if (state->OnRemove()) {
+        DEBUG_ASSERT(runnable_task_count_ > 0);
         runnable_task_count_--;
-        DEBUG_ASSERT(runnable_task_count_ >= 0);
 
         UpdatePeriod();
 
+        thread->curr_cpu = INVALID_CPU;
+
+        state->virtual_start_time_ = SchedNs(0);
+        state->virtual_finish_time_ = SchedNs(0);
+
         // Factor this task out of the run queue.
-        //virtual_time_ns_ += state->lag_time_ns_ / weight_total_;
+        //virtual_time_ += state->lag_time_ns_ / weight_total_;
         weight_total_ -= state->effective_weight();
-        DEBUG_ASSERT(weight_total_ >= TaskWeight{FromInteger(0)});
+        DEBUG_ASSERT(weight_total_ >= SchedWeight{FromInteger(0)});
 
         SCHED_LTRACEF("name=%s weight_total=%x weight=%x lag_time_ns=%ld\n",
                       thread->name,
