@@ -67,6 +67,7 @@ void Scheduler::RemoveStreamLocked(StreamRef stream) {
 }
 
 zx_status_t Scheduler::InsertOps(io_op_t** op_list, uint32_t op_count, uint32_t* out_num_ready) {
+    printf("%s: inserting %u ops\n", __FUNCTION__, op_count);
     bool was_empty = true;
     bool stream_added = false;
     fbl::AutoLock lock(&lock_);
@@ -76,11 +77,13 @@ zx_status_t Scheduler::InsertOps(io_op_t** op_list, uint32_t op_count, uint32_t*
     zx_status_t status = ZX_OK;
     for (uint32_t i = 0; i < op_count; i++) {
         io_op_t* op = op_list[i];
+        printf("op %p: sid=%u\n", op, op->sid);
         StreamRef stream = FindStreamLocked(op->sid);
         if (stream == nullptr) {
             fprintf(stderr, "Error: Attempted to enqueue op for non-existent stream\n");
             op->result = ZX_ERR_INVALID_ARGS;
             status = ZX_ERR_INVALID_ARGS;
+            printf("%s: failed to insert, no stream\n", __FUNCTION__);
             continue;
         }
         fbl::AutoLock stream_lock(&stream->lock_);
@@ -89,6 +92,7 @@ zx_status_t Scheduler::InsertOps(io_op_t** op_list, uint32_t op_count, uint32_t*
             fprintf(stderr, "Error: attempted to enqueue op for closed stream\n");
             op->result = ZX_ERR_INVALID_ARGS;
             status = ZX_ERR_INVALID_ARGS;
+            printf("%s: failed to insert, closed streamn", __FUNCTION__);
             continue;
         }
         op_list[i] = nullptr; // Clear out inserted ops.
@@ -100,6 +104,7 @@ zx_status_t Scheduler::InsertOps(io_op_t** op_list, uint32_t op_count, uint32_t*
             num_streams_++;
             stream_added = true;
         }
+        printf("%s: added op\n", __FUNCTION__);
         num_ready_ops_++;
     }
     // if (was_empty && stream_added) {
@@ -124,6 +129,7 @@ zx_status_t Scheduler::GetNextOp(bool wait, io_op_t** op_out) {
         }
         int eno = errno;
         if ((!wait) && (eno == EAGAIN)) {
+            printf("GetNextOp sem wait failed\n");
             return ZX_ERR_SHOULD_WAIT;
         }
         ZX_DEBUG_ASSERT(eno == EINTR);
@@ -166,6 +172,7 @@ zx_status_t Scheduler::GetNextOp(bool wait, io_op_t** op_out) {
 }
 
 void Scheduler::CompleteOp(io_op_t* op, zx_status_t result) {
+    printf("%s:%u\n", __FUNCTION__, __LINE__);
     fbl::AutoLock lock(&lock_);
     num_issued_ops_--;
     sem_post(&issue_sem_);

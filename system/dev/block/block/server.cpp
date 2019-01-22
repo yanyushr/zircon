@@ -311,14 +311,14 @@ zx_status_t BlockServer::AttachVmo(zx::vmo vmo, vmoid_t* out) {
 }
 
 void BlockServer::TxnEnd() {
-    size_t old_count = pending_count_.fetch_sub(1);
-    ZX_ASSERT(old_count > 0);
-    if ((old_count == 1) && barrier_in_progress_.load()) {
-        // Since we're avoiding locking, and there is a gap between
-        // "pending count decremented" and "FIFO signalled", it's possible
-        // that we'll receive spurious wakeup requests.
-        fifo_.signal(0, kSignalFifoOpsComplete);
-    }
+    // size_t old_count = pending_count_.fetch_sub(1);
+    // ZX_ASSERT(old_count > 0);
+    // if ((old_count == 1) && barrier_in_progress_.load()) {
+    //     // Since we're avoiding locking, and there is a gap between
+    //     // "pending count decremented" and "FIFO signalled", it's possible
+    //     // that we'll receive spurious wakeup requests.
+    //     fifo_.signal(0, kSignalFifoOpsComplete);
+    // }
 }
 
 zx_status_t BlockServer::Service(io_op_t* op) {
@@ -515,8 +515,10 @@ zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) 
         groups_[group].CtrAdd(sub_txns - 1);
         ZX_DEBUG_ASSERT(len_remaining == 0);
 
+        printf("PUSHED %u to intake queue\n", sub_txn_idx);
         intake_queue_.splice(intake_queue_.end(), sub_txns_queue);
     } else {
+        printf("PUSHED one to intake queue\n");
         InQueueAdd(iobuf->vmo(), request->length, request->vmo_offset,
                    request->dev_offset, msg.release(), &intake_queue_);
     }
@@ -550,6 +552,7 @@ zx_status_t BlockServer::ProcessFlushRequest(block_fifo_request_t* request) {
     extra->reqid = request->reqid;
     extra->group = request->group;
     msg.op()->command = OpcodeToCommand(request->opcode);
+    printf("pushed FLUSH to intake queue\n");
     InQueueAdd(ZX_HANDLE_INVALID, 0, 0, 0, msg.release(), &intake_queue_);
     return ZX_OK;
 }
@@ -583,9 +586,11 @@ zx_status_t BlockServer::ProcessRequest(block_fifo_request_t* request) {
 }
 
 zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait) {
+    printf("Intake\n");
     size_t max_ops = *op_count;
     if (max_ops == 0) {
-        return ZX_OK;
+        printf("Intake op count = 0\n");
+        return ZX_ERR_INVALID_ARGS;
     }
     uint32_t i;
     for (i = 0; i < max_ops; i++) {
@@ -593,8 +598,8 @@ zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait
         if (msg == NULL) {
             break;
         }
+        printf("POPPED one from intake queue\n");
         op_list[i] = &msg->extra.iop;
-        // in_queue_.push_back(msg);
     }
     if (i > 0) {
         printf("INTAKE: transferred %u from in queue\n", i);
@@ -609,16 +614,20 @@ zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait
         status = ZX_ERR_CANCELED;
     }
     if (status != ZX_OK) {
+        printf("Intake READ FAILED\n");
         return status;
     }
     printf("read %zu requests\n", actual);
     for (size_t i = 0; i < actual; i++) {
         bool use_group = requests[i].opcode & BLOCKIO_GROUP_ITEM;
+        printf("request %zu\n", i);
         if (use_group) {
+            printf("  use groups\n");
             bool wants_reply = requests[i].opcode & BLOCKIO_GROUP_LAST;
             reqid_t reqid = requests[i].reqid;
             groupid_t group = requests[i].group;
             if (group >= MAX_TXN_GROUP_COUNT) {
+                printf("  invalid group count\n");
                 // Operation which is not accessing a valid group.
                 if (wants_reply) {
                     OutOfBandRespond(fifo_, ZX_ERR_IO, reqid, group);
@@ -626,23 +635,30 @@ zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait
                 continue;
             }
             // Enqueue the message against the transaction group.
+            printf("  enqueued transaction\n");
             status = groups_[group].Enqueue(wants_reply, reqid);
             if (status != ZX_OK) {
+                printf("  enqueue failed\n");
                 TxnComplete(status, reqid, group);
                 continue;
             }
         } else {
             requests[i].group = kNoGroup;
         }
-        ProcessRequest(&requests[i]);
+        status = ProcessRequest(&requests[i]);
+        if (status == ZX_OK) {
+            printf("  process request ok\n");
+        } else {
+            printf("  process request failed\n");
+        }
     }
     for (i = 0; i < max_ops; i++) {
         block_msg_t* msg = intake_queue_.pop_front();
         if (msg == NULL) {
             break;
         }
+        printf("POPPED one from intake queue\n");
         op_list[i] = &msg->extra.iop;
-        // intake_queue_.push_back(msg);
     }
     *op_count = i;
     return ZX_OK;
