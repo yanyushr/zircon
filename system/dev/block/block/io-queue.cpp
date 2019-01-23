@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "io-queue.h"
-
 #include <fbl/auto_lock.h>
+
+#include "io-queue.h"
 
 #define MAX_ACQUIRE_WORKERS 1
 
@@ -15,7 +15,7 @@ Queue::Queue(const QueueOps* ops) : sched_(), shutdown_(false), ops_(ops) {
 }
 
 Queue::~Queue() {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    // printf("%s:%u\n", __FUNCTION__, __LINE__);
     if (!shutdown_) {
         Shutdown();
     }
@@ -23,7 +23,7 @@ Queue::~Queue() {
 }
 
 zx_status_t Queue::OpenStream(uint32_t priority, uint32_t* id_out) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    // printf("%s:%u\n", __FUNCTION__, __LINE__);
     if (priority > IO_SCHED_MAX_PRI) {
         return ZX_ERR_INVALID_ARGS;
     }
@@ -41,13 +41,13 @@ zx_status_t Queue::OpenStream(uint32_t priority, uint32_t* id_out) {
             return ZX_ERR_BAD_STATE;
         }
     }
-    printf("q: opened stream %u\n", stream->id_);
+    // printf("q: opened stream %u\n", stream->id_);
     sched_.AddStream(std::move(stream), id_out);
     return ZX_OK;
 }
 
 zx_status_t Queue::CloseStream(uint32_t id) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    // printf("%s:%u\n", __FUNCTION__, __LINE__);
     for (bool first = true; ; first = false) {
         fbl::AutoLock lock(&lock_);
         if (first) {
@@ -78,7 +78,7 @@ zx_status_t Queue::CloseStream(uint32_t id) {
 }
 
 zx_status_t Queue::Serve(uint32_t num_workers) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    // printf("%s:%u\n", __FUNCTION__, __LINE__);
     if ((num_workers == 0) || (num_workers > IO_QUEUE_MAX_WORKERS)) {
         return ZX_ERR_INVALID_ARGS;
     }
@@ -97,7 +97,6 @@ zx_status_t Queue::Serve(uint32_t num_workers) {
 }
 
 void Queue::Shutdown() {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
     assert(shutdown_ == false);
     shutdown_ = true;
 
@@ -111,7 +110,7 @@ void Queue::Shutdown() {
     {
         fbl::AutoLock lock(&lock_);
         if (active_workers_ > 0) {
-            printf("q: waiting on worker exit\n");
+            // printf("q: waiting on worker exit\n");
             cnd_wait(&event_workers_exited_, lock_.GetInternal());
             assert(active_workers_ == 0);
         }
@@ -119,16 +118,16 @@ void Queue::Shutdown() {
             worker[i].Join();
         }
     }
-    printf("q: shutdown complete\n");
+    // printf("q: shutdown complete\n");
 }
 
 void Queue::WorkerExited(uint32_t id) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    // printf("%s:%u\n", __FUNCTION__, __LINE__);
     fbl::AutoLock lock(&lock_);
     active_workers_--;
-    printf("worker %u exiting, num_workers = %u\n", id, active_workers_);
+    // printf("worker %u exiting, num_workers = %u\n", id, active_workers_);
     if (active_workers_ == 0) {
-        printf("signalling all workers exited\n");
+        // printf("signalling all workers exited\n");
         cnd_broadcast(&event_workers_exited_);
     }
 }
@@ -149,17 +148,14 @@ void Queue::ReleaseAcquireSlot() {
 }
 
 zx_status_t Queue::OpAcquire(io_op_t** op_list, uint32_t* op_count, bool wait) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
     return ops_->acquire(ops_->context, op_list, op_count, wait);
 }
 
 zx_status_t Queue::OpIssue(io_op_t* op) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
     return ops_->issue(ops_->context, op);
 }
 
 void Queue::OpRelease(io_op_t* op) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
     ops_->release(ops_->context, op);
 }
 

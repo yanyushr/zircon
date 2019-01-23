@@ -16,7 +16,7 @@ ServerManager::~ServerManager() {
 }
 
 zx_status_t ServerManager::Start(ddk::BlockProtocolClient* protocol, zx::fifo* out_fifo) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    // printf("%s:%u\n", __FUNCTION__, __LINE__);
     ServerManagerState state = state_.load();
     if (state == SM_STATE_SERVING) {
         return ZX_ERR_ALREADY_BOUND;
@@ -57,7 +57,7 @@ zx_status_t ServerManager::Start(ddk::BlockProtocolClient* protocol, zx::fifo* o
 }
 
 void ServerManager::Shutdown() {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    // printf("%s:%u\n", __FUNCTION__, __LINE__);
     if (state_.load() == SM_STATE_SHUTDOWN) {
         return;
     }
@@ -69,7 +69,7 @@ void ServerManager::Shutdown() {
 }
 
 zx_status_t ServerManager::AttachVmo(zx::vmo vmo, vmoid_t* out_vmoid) {
-    printf("%s:%u\n", __FUNCTION__, __LINE__);
+    // printf("%s:%u\n", __FUNCTION__, __LINE__);
     if (state_.load() != SM_STATE_SERVING) {
         return ZX_ERR_BAD_STATE;
     }
