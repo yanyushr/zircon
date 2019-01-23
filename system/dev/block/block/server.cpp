@@ -31,10 +31,6 @@ constexpr zx_signals_t kSignalFifoTerminate   = ZX_USER_SIGNAL_0;
 // This signal is set on the FIFO when, after the thread enqueueing operations
 // has encountered a barrier, all prior operations have completed.
 constexpr zx_signals_t kSignalFifoOpsComplete = ZX_USER_SIGNAL_1;
-// Signalled on the fifo when it has finished terminating.
-// (If we need to free up user signals, this could easily be transformed
-// into a completion object).
-// constexpr zx_signals_t kSignalFifoTerminated  = ZX_USER_SIGNAL_2;
 
 // Impossible groupid used internally to signify that an operation
 // has no accompanying group.
@@ -111,23 +107,6 @@ void BlockServer::BarrierComplete() {
 #endif
 }
 
-void BlockServer::TerminateQueue() {
-#if 0
-    InQueueDrainer();
-    while (true) {
-        if (pending_count_.load() == 0 && intake_queue_.is_empty()) {
-            return;
-        }
-        zx_signals_t signals = kSignalFifoOpsComplete;
-        zx_signals_t seen = 0;
-        fifo_.wait_one(signals, zx::deadline_after(zx::msec(10)), &seen);
-        if (seen & kSignalFifoOpsComplete) {
-            BarrierComplete();
-        }
-    }
-#endif
-}
-
 void BlockServer::TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group) {
     if (group == kNoGroup) {
         OutOfBandRespond(fifo_, status, reqid, group);
@@ -152,41 +131,26 @@ void BlockServer::AsyncBlockComplete(BlockMsg* msg, zx_status_t status) {
 zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t max, size_t* actual) {
     ZX_DEBUG_ASSERT(max > 0);
 
-    // auto cleanup = fbl::MakeAutoCall([this]() {
-    //     TerminateQueue();
-    //     ZX_ASSERT(pending_count_.load() == 0);
-    //     ZX_ASSERT(intake_queue_.is_empty());
-    //     fifo_.signal(0, kSignalFifoTerminated);
-    // });
-
     // Keep trying to read messages from the fifo until we have a reason to
     // terminate
     zx_status_t status;
     while (true) {
         status = fifo_.read(requests, max, actual);
-        zx_signals_t signals;
-        zx_signals_t seen;
-        switch (status) {
-        case ZX_ERR_SHOULD_WAIT:
-            signals = ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED |
-                    kSignalFifoTerminate | kSignalFifoOpsComplete;
-            if ((status = fifo_.wait_one(signals, zx::time::infinite(), &seen)) != ZX_OK) {
-                return status;
-            }
-            if (seen & kSignalFifoOpsComplete) {
-                BarrierComplete();
-                continue;
-            }
-            if ((seen & ZX_FIFO_PEER_CLOSED) || (seen & kSignalFifoTerminate)) {
-                return ZX_ERR_PEER_CLOSED;
-            }
-            // Try reading again...
-            break;
-        case ZX_OK:
-            // cleanup.cancel();
-            return ZX_OK;
-        default:
+        if (status != ZX_ERR_SHOULD_WAIT) {
             return status;
+        }
+        zx_signals_t signals = ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED |
+                               kSignalFifoTerminate | kSignalFifoOpsComplete;
+        zx_signals_t seen;
+        if ((status = fifo_.wait_one(signals, zx::time::infinite(), &seen)) != ZX_OK) {
+            return status;
+        }
+        if (seen & kSignalFifoOpsComplete) {
+            BarrierComplete();
+            continue;
+        }
+        if ((seen & ZX_FIFO_PEER_CLOSED) || (seen & kSignalFifoTerminate)) {
+            return ZX_ERR_PEER_CLOSED;
         }
     }
 }

@@ -196,7 +196,6 @@ private:
     // Functions that read from the fifo and invoke the queue drainer.
     // Should not be invoked concurrently.
     zx_status_t Read(block_fifo_request_t* requests, size_t max, size_t* actual);
-    void TerminateQueue();
 
     // Attempts to enqueue all operations on the |in_queue_|. Stops
     // when either the queue is empty, or a BARRIER_BEFORE is reached and
