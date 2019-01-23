@@ -34,14 +34,11 @@ Scheduler::~Scheduler() {
     sem_destroy(&issue_sem_);
 }
 
-void Scheduler::AddStream(StreamRef stream, uint32_t* id_out) {
+zx_status_t Scheduler::AddStream(StreamRef stream) {
     fbl::AutoLock lock(&lock_);
-    uint32_t id = max_id_++;
-    stream->id_ = id;
-    if (id_out) {
-        *id_out = id;
-    }
+    ZX_DEBUG_ASSERT(stream_map_.find(stream->id_).IsValid() == false);
     stream_map_.insert(std::move(stream));
+    return ZX_OK;
 }
 
 StreamRef Scheduler::FindStream(uint32_t id) {

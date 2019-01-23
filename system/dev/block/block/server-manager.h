@@ -59,5 +59,5 @@ private:
     // bool server_running_ = false;
     fbl::unique_ptr<BlockServer> server_ = nullptr;
     fbl::unique_ptr<ioqueue::Queue> queue_ = nullptr;
-    uint32_t stream_id_;
+    // uint32_t stream_id_;
 };

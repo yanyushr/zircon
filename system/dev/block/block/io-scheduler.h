@@ -28,7 +28,7 @@ public:
     Scheduler();
     ~Scheduler();
 
-    void AddStream(StreamRef stream, uint32_t* id_out);
+    zx_status_t AddStream(StreamRef stream);
     StreamRef FindStream(uint32_t id);
     void RemoveStream(StreamRef stream);
     void RemoveStreamLocked(StreamRef stream);
@@ -56,7 +56,6 @@ private:
     uint32_t num_ready_ops_ = 0;     // Number of ops waiting to be issued.
     uint32_t num_issued_ops_ = 0;    // Number of issued ops.
     uint32_t max_issues_;            // Maximum number of concurrent issues.
-    uint32_t max_id_ = 0;
 
     StreamIdMap stream_map_;         // Map of id to stream.
     StreamPriList pri_list_[IO_SCHED_NUM_PRI];

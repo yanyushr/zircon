@@ -9,6 +9,8 @@
 
 #include "server-manager.h"
 
+constexpr uint32_t kDefaultStreamPriority = 0;
+
 ServerManager::ServerManager() = default;
 
 ServerManager::~ServerManager() {
@@ -38,9 +40,12 @@ zx_status_t ServerManager::Start(ddk::BlockProtocolClient* protocol, zx::fifo* o
         printf("Failed to allocate queue\n");
         return ZX_ERR_NO_MEMORY;
     }
-    if((status = queue->OpenStream(0, &stream_id_)) != ZX_OK) {
-        printf("Failed to open stream\n");
-        return status;
+
+    for (uint32_t i = 0; i <= MAX_TXN_GROUP_COUNT; i++) {
+        if ((status = queue->OpenStream(kDefaultStreamPriority, i)) != ZX_OK) {
+            printf("Failed to open stream\n");
+            return status;
+        }
     }
 
     server_ = std::move(server);

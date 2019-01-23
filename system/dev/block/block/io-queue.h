@@ -43,7 +43,7 @@ public:
     ~Queue();
 
     // Open a stream of ops.
-    zx_status_t OpenStream(uint32_t priority, uint32_t* id_out);
+    zx_status_t OpenStream(uint32_t priority, uint32_t id);
     // Close a stream. Blocks until all ops have completed.
     zx_status_t CloseStream(uint32_t id);
 

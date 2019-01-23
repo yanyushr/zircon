@@ -22,7 +22,7 @@ Queue::~Queue() {
     cnd_destroy(&event_workers_exited_);
 }
 
-zx_status_t Queue::OpenStream(uint32_t priority, uint32_t* id_out) {
+zx_status_t Queue::OpenStream(uint32_t priority, uint32_t id) {
     // printf("%s:%u\n", __FUNCTION__, __LINE__);
     if (priority > IO_SCHED_MAX_PRI) {
         return ZX_ERR_INVALID_ARGS;
@@ -32,18 +32,16 @@ zx_status_t Queue::OpenStream(uint32_t priority, uint32_t* id_out) {
     if (!ac.check()) {
         return ZX_ERR_NO_MEMORY;
     }
-    {
-        fbl::AutoLock lock(&lock_);
-        assert(!shutdown_);
-        if (shutdown_) {
-            fprintf(stderr, "Attempted to open stream on closed queue.\n");
-            // delete stream;
-            return ZX_ERR_BAD_STATE;
-        }
-    }
-    // printf("q: opened stream %u\n", stream->id_);
-    sched_.AddStream(std::move(stream), id_out);
-    return ZX_OK;
+    stream->id_ = id;
+    // {
+    //     fbl::AutoLock lock(&lock_);
+    //     assert(!shutdown_);
+    //     if (shutdown_) {
+    //         fprintf(stderr, "Attempted to open stream on closed queue.\n");
+    //         return ZX_ERR_BAD_STATE;
+    //     }
+    // }
+    return sched_.AddStream(std::move(stream));
 }
 
 zx_status_t Queue::CloseStream(uint32_t id) {
