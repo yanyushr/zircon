@@ -66,7 +66,7 @@ void Scheduler::RemoveStreamLocked(StreamRef stream) {
     stream_map_.erase(stream->id_);
 }
 
-zx_status_t Scheduler::InsertOps(io_op_t** op_list, uint32_t op_count, uint32_t* out_num_ready) {
+zx_status_t Scheduler::InsertOps(io_op_t** op_list, size_t op_count, size_t* out_num_ready) {
     bool was_empty = true;
     bool stream_added = false;
     fbl::AutoLock lock(&lock_);
@@ -74,7 +74,7 @@ zx_status_t Scheduler::InsertOps(io_op_t** op_list, uint32_t op_count, uint32_t*
         was_empty = false;
     }
     zx_status_t status = ZX_OK;
-    for (uint32_t i = 0; i < op_count; i++) {
+    for (size_t i = 0; i < op_count; i++) {
         io_op_t* op = op_list[i];
         StreamRef stream = FindStreamLocked(op->sid);
         if (stream == nullptr) {

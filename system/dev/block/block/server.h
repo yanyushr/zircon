@@ -196,6 +196,7 @@ private:
     // Functions that read from the fifo and invoke the queue drainer.
     // Should not be invoked concurrently.
     zx_status_t Read(block_fifo_request_t* requests, size_t max, size_t* actual);
+    size_t FillFromIntakeQueue(io_op_t** op_list, size_t max_ops);
 
     // Attempts to enqueue all operations on the |in_queue_|. Stops
     // when either the queue is empty, or a BARRIER_BEFORE is reached and
@@ -205,13 +206,12 @@ private:
     zx_status_t FindVmoIDLocked(vmoid_t* out) TA_REQ(server_lock_);
 
     // Called indirectly by Queue ops.
-    zx_status_t Intake(io_op_t** op_list, uint32_t* op_count, bool wait);
+    zx_status_t Intake(io_op_t** op_list, size_t* op_count, bool wait);
     zx_status_t Service(io_op_t* op);
     void SignalFifoCancel();
 
     // Queue ops
-    static zx_status_t OpAcquire(void* context, io_op_t** op_list, uint32_t* op_count,
-                                  bool wait);
+    static zx_status_t OpAcquire(void* context, io_op_t** op_list, size_t* op_count, bool wait);
     static zx_status_t OpIssue(void* context, io_op_t* op);
     static void OpRelease(void* context, io_op_t* op);
     static void OpCancelAcquire(void* context);

@@ -26,7 +26,7 @@ private:
     void WorkerLoop();
     zx_status_t AcquireLoop();
     zx_status_t IssueLoop();
-    zx_status_t AcquireOps(bool wait, uint32_t* out_num_ready);
+    zx_status_t AcquireOps(bool wait, size_t* out_num_ready);
 
     Queue* q_ = nullptr;
     bool cancelled_ = false;

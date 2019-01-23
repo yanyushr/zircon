@@ -147,7 +147,7 @@ void Queue::ReleaseAcquireSlot() {
     acquire_workers_--;
 }
 
-zx_status_t Queue::OpAcquire(io_op_t** op_list, uint32_t* op_count, bool wait) {
+zx_status_t Queue::OpAcquire(io_op_t** op_list, size_t* op_count, bool wait) {
     return ops_->acquire(ops_->context, op_list, op_count, wait);
 }
 

@@ -20,7 +20,7 @@ struct QueueOps {
     // Returns true if second op can be reordered ahead of the first one.
     // bool (*can_reorder)(struct io_queue* q, io_op_t* first, io_op_t* second);
     // Get ops from source.
-    zx_status_t (*acquire)(void* context, io_op_t** op_list, uint32_t* op_count, bool wait);
+    zx_status_t (*acquire)(void* context, io_op_t** op_list, size_t* op_count, bool wait);
     // Executes the op. May not be called if dependencies have failed.
     zx_status_t (*issue)(void* context, io_op_t* op);
     // An op has completed. Called once for every scheduled op. Queue maintains no references
@@ -66,7 +66,7 @@ public:
     void WorkerExited(uint32_t id);
     zx_status_t GetAcquireSlot();
     void ReleaseAcquireSlot();
-    zx_status_t OpAcquire(io_op_t** op_list, uint32_t* op_count, bool wait);
+    zx_status_t OpAcquire(io_op_t** op_list, size_t* op_count, bool wait);
     zx_status_t OpIssue(io_op_t* op);
     void OpRelease(io_op_t* op);
 

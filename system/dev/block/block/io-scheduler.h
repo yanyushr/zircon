@@ -33,7 +33,7 @@ public:
     void RemoveStream(StreamRef stream);
     void RemoveStreamLocked(StreamRef stream);
 
-    zx_status_t InsertOps(io_op_t** op_list, uint32_t op_count, uint32_t* out_num_ready);
+    zx_status_t InsertOps(io_op_t** op_list, size_t op_count, size_t* out_num_ready);
     zx_status_t GetNextOp(bool wait, io_op_t** op_out);
     void CompleteOp(io_op_t* op, zx_status_t result);
 

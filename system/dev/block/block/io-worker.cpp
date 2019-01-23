@@ -47,7 +47,7 @@ void Worker::ThreadMain() {
 void Worker::WorkerLoop() {
     // printf("%s:%u\n", __FUNCTION__, __LINE__);
 
-    uint32_t num_ready;
+    size_t num_ready;
     Scheduler* sched = q_->GetScheduler();
     do {
         if (!cancelled_) {
@@ -110,10 +110,10 @@ void Worker::WorkerLoop() {
 //     return status;
 // }
 
-zx_status_t Worker::AcquireOps(bool wait, uint32_t* out_num_ready) {
+zx_status_t Worker::AcquireOps(bool wait, size_t* out_num_ready) {
     io_op_t* op_list[32];
     zx_status_t status;
-    uint32_t op_count;
+    size_t op_count;
     do {
         op_count = (sizeof(op_list) / sizeof(io_op_t*));
         status = q_->OpAcquire(op_list, &op_count, wait);

@@ -462,12 +462,8 @@ zx_status_t BlockServer::ProcessRequest(block_fifo_request_t* request) {
     return status;
 }
 
-zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait) {
-    size_t max_ops = *op_count;
-    if (max_ops == 0) {
-        return ZX_ERR_INVALID_ARGS;
-    }
-    uint32_t i;
+size_t BlockServer::FillFromIntakeQueue(io_op_t** op_list, size_t max_ops) {
+    size_t i;
     for (i = 0; i < max_ops; i++) {
         block_msg_t* msg = intake_queue_.pop_front();
         if (msg == NULL) {
@@ -475,8 +471,17 @@ zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait
         }
         op_list[i] = &msg->extra.iop;
     }
-    if (i > 0) {
-        *op_count = i;
+    return i;
+}
+
+zx_status_t BlockServer::Intake(io_op_t** op_list, size_t* op_count, bool wait) {
+    size_t max_ops = *op_count;
+    if (max_ops == 0) {
+        return ZX_ERR_INVALID_ARGS;
+    }
+    size_t num = FillFromIntakeQueue(op_list, max_ops);
+    if (num > 0) {
+        *op_count = num;
         return ZX_OK;
     }
 
@@ -514,14 +519,12 @@ zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait
         status = ProcessRequest(&requests[i]);
         // TODO: look at return value
     }
-    for (i = 0; i < max_ops; i++) {
-        block_msg_t* msg = intake_queue_.pop_front();
-        if (msg == NULL) {
-            break;
-        }
-        op_list[i] = &msg->extra.iop;
+    num = FillFromIntakeQueue(op_list, max_ops);
+    if (num > 0) {
+        *op_count = num;
+        return ZX_OK;
     }
-    *op_count = i;
+    *op_count = num;
     return ZX_OK;
 }
 
@@ -595,7 +598,7 @@ void BlockServer::Shutdown() {
     ZX_ASSERT(intake_queue_.is_empty());
 }
 
-zx_status_t BlockServer::OpAcquire(void* context, io_op_t** op_list, uint32_t* op_count, bool wait) {
+zx_status_t BlockServer::OpAcquire(void* context, io_op_t** op_list, size_t* op_count, bool wait) {
     BlockServer* bs = static_cast<BlockServer*>(context);
     return bs->Intake(op_list, op_count, wait);
 }
