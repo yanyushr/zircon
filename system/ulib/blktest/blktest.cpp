@@ -776,15 +776,15 @@ RUN_TEST(blkdev_test_multiple)
 #endif
 RUN_TEST(blkdev_test_fifo_no_op)
 RUN_TEST(blkdev_test_fifo_basic)
-// - RUN_TEST(blkdev_test_fifo_whole_disk)
-// RUN_TEST(blkdev_test_fifo_multiple_vmo)
-// RUN_TEST(blkdev_test_fifo_multiple_vmo_multithreaded)
-// // - TODO(smklein): Test ops across different vmos
-// RUN_TEST(blkdev_test_fifo_unclean_shutdown)
-// RUN_TEST(blkdev_test_fifo_bad_client_vmoid)
-// RUN_TEST(blkdev_test_fifo_bad_client_unaligned_request)
-// RUN_TEST(blkdev_test_fifo_bad_client_overflow)
-// RUN_TEST(blkdev_test_fifo_bad_client_bad_vmo)
+// // - RUN_TEST(blkdev_test_fifo_whole_disk)
+RUN_TEST(blkdev_test_fifo_multiple_vmo)
+RUN_TEST(blkdev_test_fifo_multiple_vmo_multithreaded)
+// - TODO(smklein): Test ops across different vmos
+RUN_TEST(blkdev_test_fifo_unclean_shutdown)
+RUN_TEST(blkdev_test_fifo_bad_client_vmoid)
+RUN_TEST(blkdev_test_fifo_bad_client_unaligned_request)
+RUN_TEST(blkdev_test_fifo_bad_client_overflow)
+RUN_TEST(blkdev_test_fifo_bad_client_bad_vmo)
 END_TEST_CASE(blkdev_tests)
 
 } // namespace tests

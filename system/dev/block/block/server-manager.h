@@ -4,9 +4,8 @@
 
 #pragma once
 
-#include <threads.h>
-
 #include <atomic>
+#include <threads.h>
 
 #include <ddktl/protocol/block.h>
 #include <lib/zx/fifo.h>
@@ -29,13 +28,13 @@ public:
     //
     // Returns an error if the block server cannot be created.
     // Returns an error if the Fifo server is already running.
-    zx_status_t StartServer(ddk::BlockProtocolClient* protocol, zx::fifo* out_fifo);
+    zx_status_t Start(ddk::BlockProtocolClient* protocol, zx::fifo* out_fifo);
 
     // Ensures the FIFO server has terminated.
     //
     // When this function returns, it is guaranteed that the next call to |StartServer()|
     // won't see an already running Fifo server.
-    zx_status_t CloseFifoServer();
+    void Shutdown();
 
     // Attaches a VMO to the currently executing server, if one is running.
     //
@@ -46,18 +45,18 @@ public:
         queue_->AsyncCompleteOp(op, result);
     }
 
+    // Notification that the client FIFO has been closed.
+    void AsyncClientExited();
+
 private:
-    // Frees the Fifo server, cleaning up "server_" and setting the thread state to none.
-    //
-    // Precondition: No background thread is executing.
-    void FreeServer();
+    enum ServerManagerState {
+        SM_STATE_SHUTDOWN = 0,
+        SM_STATE_SERVING,
+        SM_STATE_EXITED,
+    };
 
-    // Runs the server until |blockserver_shutdown| is invoked on |server_|, or the client
-    // closes their end of the Fifo.
-    static int RunServer(void* arg);
-
-    // thrd_t thread_;
-    bool server_running_ = false;
+    std::atomic<ServerManagerState> state_ = SM_STATE_SHUTDOWN;
+    // bool server_running_ = false;
     fbl::unique_ptr<BlockServer> server_ = nullptr;
     fbl::unique_ptr<ioqueue::Queue> queue_ = nullptr;
     uint32_t stream_id_;

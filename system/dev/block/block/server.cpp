@@ -144,7 +144,6 @@ void BlockServer::AsyncBlockComplete(BlockMsg* msg, zx_status_t status) {
     extra->server->TxnComplete(status, extra->reqid, extra->group);
     extra->server->TxnEnd();
 
-    // // Todo: call queue->AsyncCompleteOp()
     io_op_t* op = &extra->iop;
     manager_->AsyncCompleteOp(op, status);
 }
@@ -163,11 +162,13 @@ zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t max, size_t
     // terminate
     zx_status_t status;
     while (true) {
+printf("Read()\n");
         status = fifo_.read(requests, max, actual);
         zx_signals_t signals;
         zx_signals_t seen;
         switch (status) {
         case ZX_ERR_SHOULD_WAIT:
+printf("Read() ZX_ERR_SHOULD_WAIT\n");
             signals = ZX_FIFO_READABLE | ZX_FIFO_PEER_CLOSED |
                     kSignalFifoTerminate | kSignalFifoOpsComplete;
             if ((status = fifo_.wait_one(signals, zx::time::infinite(), &seen)) != ZX_OK) {
@@ -183,9 +184,11 @@ zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t max, size_t
             // Try reading again...
             break;
         case ZX_OK:
+printf("Read() ZX_OK\n");
             // cleanup.cancel();
             return ZX_OK;
         default:
+printf("Read() err %d\n", status);
             return status;
         }
     }
@@ -607,13 +610,15 @@ zx_status_t BlockServer::Intake(io_op_t** op_list, uint32_t* op_count, bool wait
         return ZX_OK;
     }
 
+    printf("Intake Read()\n");
     size_t actual;
     block_fifo_request_t requests[BLOCK_FIFO_MAX_DEPTH];
     zx_status_t status = Read(requests, BLOCK_FIFO_MAX_DEPTH, &actual);
     if (status == ZX_ERR_PEER_CLOSED) {
-        status = ZX_ERR_CANCELED;
-    }
-    if (status != ZX_OK) {
+        printf("Intake Read() ZX_ERR_PEER_CLOSED\n");
+        manager_->AsyncClientExited();
+        return ZX_ERR_CANCELED;
+    } else if (status != ZX_OK) {
         printf("Intake READ FAILED\n");
         return status;
     }

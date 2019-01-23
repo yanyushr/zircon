@@ -119,6 +119,7 @@ void Queue::Shutdown() {
             worker[i].Join();
         }
     }
+    printf("q: shutdown complete\n");
 }
 
 void Queue::WorkerExited(uint32_t id) {
