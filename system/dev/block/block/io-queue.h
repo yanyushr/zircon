@@ -66,9 +66,9 @@ public:
     void WorkerExited(uint32_t id);
     zx_status_t GetAcquireSlot();
     void ReleaseAcquireSlot();
-    zx_status_t OpAcquire(io_op_t** op_list, size_t* op_count, bool wait);
-    zx_status_t OpIssue(io_op_t* op);
-    void OpRelease(io_op_t* op);
+    zx_status_t AcquireOps(io_op_t** op_list, size_t* op_count, bool wait);
+    zx_status_t IssueOp(io_op_t* op);
+    void ReleaseOp(io_op_t* op);
 
 private:
     Scheduler sched_{};

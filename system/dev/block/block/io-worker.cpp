@@ -71,13 +71,13 @@ void Worker::WorkerLoop() {
                 break;
             }
             // Issue slot acquired and op available. Execute it.
-            status = q_->OpIssue(op);
+            status = q_->IssueOp(op);
             if (status == ZX_ERR_ASYNC) {
                 continue;   // Op will be completed asynchronously.
             }
             // Op completed or failed synchronously. Release.
             sched->CompleteOp(op, status);
-            q_->OpRelease(op);
+            q_->ReleaseOp(op);
             op = nullptr; // Op freed in ops->release().
         }
     } while (!cancelled_);
@@ -116,7 +116,7 @@ zx_status_t Worker::AcquireOps(bool wait, size_t* out_num_ready) {
     size_t op_count;
     do {
         op_count = (sizeof(op_list) / sizeof(io_op_t*));
-        status = q_->OpAcquire(op_list, &op_count, wait);
+        status = q_->AcquireOps(op_list, &op_count, wait);
         if (status == ZX_ERR_CANCELED) {
             cancelled_ = true;
         }
@@ -129,7 +129,7 @@ zx_status_t Worker::AcquireOps(bool wait, size_t* out_num_ready) {
         for (uint32_t i = 0; i < op_count; i++) {
             // Non-null ops encountered errors, release them.
             if (op_list[i] != NULL) {
-                q_->OpRelease(op_list[i]);
+                q_->ReleaseOp(op_list[i]);
             }
         }
     }
