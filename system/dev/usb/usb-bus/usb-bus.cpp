@@ -83,6 +83,7 @@ zx_status_t UsbBus::UsbBusInterfaceRemoveDevice(uint32_t device_id) {
     if (device == nullptr) {
         return ZX_ERR_BAD_STATE;
     }
+printf("UsbBus::UsbBusInterfaceRemoveDevice\n");
     device->DdkRemove();
     devices_[device_id].reset();
 
@@ -219,6 +220,7 @@ zx_status_t UsbBus::UsbBusSetHubInterface(zx_device_t* usb_device, const usb_hub
 }
 
 void UsbBus::DdkUnbind() {
+printf("UsbBus::DdkUnbind\n");
     hci_.SetBusInterface(nullptr);
 
     for (auto device : devices_) {

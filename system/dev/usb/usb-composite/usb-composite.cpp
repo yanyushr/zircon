@@ -43,6 +43,7 @@ bool UsbComposite::RemoveInterfaceById(uint8_t interface_id) {
     size_t index = 0; 
     for (auto intf : interfaces_) {
         if (intf->ContainsInterface(interface_id)) {
+printf("UsbComposite::RemoveInterfaceById\n");
             intf->DdkRemove();
             interfaces_.erase(index);
             return true;
@@ -306,6 +307,7 @@ zx_status_t UsbComposite::GetAdditionalDescriptorList(uint8_t last_interface_id,
 }
 
 void UsbComposite::DdkUnbind() {
+printf("UsbComposite::DdkUnbind\n");
     {
         fbl::AutoLock lock(&lock_);
         for (auto interface : interfaces_) {
@@ -325,6 +327,10 @@ zx_status_t UsbComposite::Init() {
     // Parent must support USB protocol.
     if (!usb_.is_valid()) {
         return ZX_ERR_NOT_SUPPORTED;
+    }
+
+    for (size_t i = 0; i < countof(interface_statuses_); i++) {
+        interface_statuses_[i] = AVAILABLE;
     }
 
     usb_.GetDeviceDescriptor(&device_desc_);

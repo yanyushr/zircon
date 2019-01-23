@@ -153,6 +153,7 @@ zx_status_t UsbInterface::DdkGetProtocol(uint32_t proto_id, void* protocol) {
 }
 
 void UsbInterface::DdkUnbind() {
+printf("UsbInterface::DdkUnbind\n");
     DdkRemove();
 }
 
