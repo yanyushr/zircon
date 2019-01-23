@@ -8,6 +8,7 @@
 #include <arch/ops.h>
 #include <kernel/align.h>
 #include <kernel/event.h>
+#include <kernel/fair_scheduler.h>
 #include <kernel/stats.h>
 #include <kernel/thread.h>
 #include <kernel/timer.h>
@@ -30,6 +31,10 @@ struct percpu {
     // per cpu run queue and bitmap to indicate which queues are non empty
     struct list_node run_queue[NUM_PRIORITIES];
     uint32_t run_queue_bitmap;
+
+#if WITH_FAIR_SCHEDULER
+    FairScheduler fair_runqueue;
+#endif
 
 #if WITH_LOCK_DEP
     // state for runtime lock validation when in irq context

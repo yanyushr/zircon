@@ -16,6 +16,7 @@ MODULE_DEPS := \
 	kernel/lib/heap \
 	kernel/lib/libc \
 	kernel/lib/fbl \
+	kernel/lib/ffl \
 	kernel/lib/zircon-internal \
 	kernel/vm
 
@@ -28,9 +29,14 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/mp.cpp \
 	$(LOCAL_DIR)/mutex.cpp \
 	$(LOCAL_DIR)/percpu.cpp \
-	$(LOCAL_DIR)/sched.cpp \
 	$(LOCAL_DIR)/thread.cpp \
 	$(LOCAL_DIR)/timer.cpp \
 	$(LOCAL_DIR)/wait.cpp
+
+ifeq ($(call TOBOOL,$(ENABLE_FAIR_SCHEDULER)),true)
+MODULE_SRCS += $(LOCAL_DIR)/fair_scheduler.cpp
+else
+MODULE_SRCS += $(LOCAL_DIR)/sched.cpp
+endif
 
 include make/module.mk

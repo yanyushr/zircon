@@ -27,6 +27,7 @@ ENABLE_INSTALL_SAMPLES ?= false
 ENABLE_NEW_BOOTDATA := true
 ENABLE_LOCK_DEP ?= false
 ENABLE_LOCK_DEP_TESTS ?= $(ENABLE_LOCK_DEP)
+ENABLE_FAIR_SCHEDULER ?= false
 DISABLE_UTEST ?= false
 ENABLE_ULIB_ONLY ?= false
 USE_ASAN ?= false
@@ -426,6 +427,11 @@ endif
 # the tests build and *fail correctly* when lockdep is disabled.
 ifeq ($(call TOBOOL,$(ENABLE_LOCK_DEP_TESTS)),true)
 KERNEL_DEFINES += WITH_LOCK_DEP_TESTS=1
+endif
+
+# Scheduler experiment.
+ifeq ($(call TOBOOL,$(ENABLE_FAIR_SCHEDULER)),true)
+KERNEL_DEFINES += WITH_FAIR_SCHEDULER=1
 endif
 
 # additional bootdata items to be included to bootdata.bin
