@@ -116,15 +116,7 @@ void BlockServer::TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group
 }
 
 void BlockServer::AsyncBlockComplete(BlockMessage* msg, zx_status_t status) {
-    auto header = &msg->header;
-    // Since iobuf is a RefPtr, it lives at least as long as the txn,
-    // and is not discarded underneath the block device driver.
-    header->iobuf = nullptr;
-    header->server->TxnComplete(status, header->reqid, header->group);
-    header->server->TxnEnd();
-
-    io_op_t* op = &header->iop;
-    manager_->AsyncCompleteOp(op, status);
+    manager_->AsyncCompleteOp(&msg->header.iop, status);
 }
 
 zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t max, size_t* actual) {
@@ -612,6 +604,11 @@ void BlockServer::OpRelease(void* context, io_op_t* op) {
     BlockMessageHeader* header = containerof(op, BlockMessageHeader, iop);
     BlockMessage* msg = containerof(header, BlockMessage, header);
     BlockMessageWrapper wrapper(msg);
+    // Since iobuf is a RefPtr, it lives at least as long as the txn,
+    // and is not discarded underneath the block device driver.
+    header->iobuf = nullptr;
+    header->server->TxnComplete(op->result, header->reqid, header->group);
+    header->server->TxnEnd();
     // wrapper destructor frees block op here.
 }
 
