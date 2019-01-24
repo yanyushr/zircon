@@ -52,9 +52,8 @@ void OutOfBandRespond(const fzl::fifo<block_fifo_response_t, block_fifo_request_
 
 void BlockCompleteCb(void* cookie, zx_status_t status, block_op_t* bop) {
     ZX_DEBUG_ASSERT(bop != nullptr);
-    BlockMessageWrapper msg(static_cast<BlockMessage*>(cookie));
-    BlockServer* server = msg.header()->server;
-    server->AsyncBlockComplete(msg.release(), status);
+    BlockMessage* message = static_cast<BlockMessage*>(cookie);
+    message->header.server->AsyncBlockComplete(message, status);
 }
 
 uint32_t OpcodeToCommand(uint32_t opcode) {
