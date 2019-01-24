@@ -15,6 +15,7 @@ constexpr uint32_t kOpsFlagReadBarrier  = (1u << 0);
 constexpr uint32_t kOpsFlagWriteBarrier = (1u << 1);
 constexpr uint32_t kOpsFlagFullBarrier = kOpsFlagReadBarrier | kOpsFlagWriteBarrier;
 
+
 typedef struct {
     list_node_t node;    // Reserved, internal only.
     uint32_t opcode;
