@@ -64,22 +64,34 @@ struct BlockMessage;
 // All the C++ bits of a block message. This allows the block server to utilize
 // C++ libraries while also using "block_op_t"s, which may require extra space.
 struct BlockMessageHeader {
-    fbl::DoublyLinkedListNodeState<BlockMessage*> dll_node_state;
-    fbl::RefPtr<IoBuffer> iobuf;
-    BlockServer* server;
-    reqid_t reqid;
-    groupid_t group;
-    io_op_t iop;
+    BlockMessageHeader(fbl::RefPtr<IoBuffer> iobuf, BlockServer* server,
+                       block_fifo_request_t* request) : iobuf_(iobuf), server_(server),
+                       reqid_(request->reqid), group_(request->group) {
+        // iobuf_ = iobuf_ref;
+        // server_ = server
+        // reqid_ = request->reqid;
+        // group_ = request->group;
+        iop_.flags = 0;
+        iop_.result = ZX_OK;
+        iop_.sid = request->group;
+    }
+
+    fbl::DoublyLinkedListNodeState<BlockMessage*> dll_node_state_;
+    fbl::RefPtr<IoBuffer> iobuf_;
+    BlockServer* server_;
+    reqid_t reqid_;
+    groupid_t group_;
+    io_op_t iop_;
 };
 
 // A single unit of work transmitted to the underlying block layer.
 struct BlockMessage {
     static BlockMessage* FromIoOp(io_op_t* iop) {
-        return containerof(iop, BlockMessage, header.iop);
+        return containerof(iop, BlockMessage, header.iop_);
     }
 
     BlockMessageHeader header;
-    block_op_t op;
+    block_op_t bop;
     // + Extra space for underlying block_op
 };
 
@@ -88,7 +100,7 @@ struct BlockMessage {
 // a custom type trait.
 struct DoublyLinkedListTraits {
     static fbl::DoublyLinkedListNodeState<BlockMessage*>& node_state(BlockMessage& obj) {
-        return obj.header.dll_node_state;
+        return obj.header.dll_node_state_;
     }
 };
 
@@ -102,6 +114,10 @@ using BlockMsgQueue = fbl::DoublyLinkedList<BlockMessage*, DoublyLinkedListTrait
 class BlockMessageWrapper {
 public:
     DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(BlockMessageWrapper);
+
+    static zx_status_t Create(size_t block_op_size, fbl::RefPtr<IoBuffer> iobuf,
+                              BlockServer* server, block_fifo_request_t* request,
+                              BlockMessageWrapper* out);
 
     bool valid() { return message_ != nullptr; }
 
@@ -119,7 +135,7 @@ public:
         return message;
     }
     BlockMessageHeader* header() { return &message_->header; }
-    block_op_t* op() { return &message_->op; }
+    block_op_t* bop() { return &message_->bop; }
 
     BlockMessageWrapper(BlockMessage* message) : message_(message) {}
     BlockMessageWrapper() : message_(nullptr) {}
@@ -130,19 +146,6 @@ public:
 
     ~BlockMessageWrapper() {
         reset();
-    }
-
-    static zx_status_t Create(size_t block_op_size, BlockMessageWrapper* out) {
-        size_t size = block_op_size + sizeof(BlockMessage) - sizeof(block_op_t);
-        BlockMessage* message = static_cast<BlockMessage*>(calloc(1, size));
-        if (message == nullptr) {
-            return ZX_ERR_NO_MEMORY;
-        }
-        // Placement constructor, followed by explicit destructor in ~BlockMessageWrapper();
-        new (&message->header) BlockMessageHeader();
-        BlockMessageWrapper msg(message);
-        *out = std::move(msg);
-        return ZX_OK;
     }
 
 private:

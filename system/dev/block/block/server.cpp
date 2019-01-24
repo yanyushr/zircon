@@ -53,7 +53,7 @@ void OutOfBandRespond(const fzl::fifo<block_fifo_response_t, block_fifo_request_
 void BlockCompleteCb(void* cookie, zx_status_t status, block_op_t* bop) {
     ZX_DEBUG_ASSERT(bop != nullptr);
     BlockMessage* message = static_cast<BlockMessage*>(cookie);
-    message->header.server->AsyncBlockComplete(message, status);
+    message->header.server_->AsyncBlockComplete(message, status);
 }
 
 uint32_t OpcodeToCommand(uint32_t opcode) {
@@ -70,7 +70,7 @@ uint32_t OpcodeToCommand(uint32_t opcode) {
 
 void InQueueAdd(zx_handle_t vmo, uint64_t length, uint64_t vmo_offset,
                 uint64_t dev_offset, BlockMessage* msg, BlockMsgQueue* queue) {
-    block_op_t* bop = &msg->op;
+    block_op_t* bop = &msg->bop;
     bop->rw.length = (uint32_t) length;
     bop->rw.vmo = vmo;
     bop->rw.offset_dev = dev_offset;
@@ -95,6 +95,23 @@ zx_status_t IoBuffer::ValidateVmoHack(uint64_t length, uint64_t vmo_offset) {
     return ZX_OK;
 }
 
+zx_status_t BlockMessageWrapper::Create(size_t block_op_size, fbl::RefPtr<IoBuffer> iobuf,
+                                        BlockServer* server, block_fifo_request_t* request,
+                                        BlockMessageWrapper* out) {
+    size_t size = block_op_size + sizeof(BlockMessage) - sizeof(block_op_t);
+    BlockMessage* message = static_cast<BlockMessage*>(calloc(1, size));
+    if (message == nullptr) {
+        return ZX_ERR_NO_MEMORY;
+    }
+    message->bop.command = OpcodeToCommand(request->opcode);
+    // Placement constructor, followed by explicit destructor in ~BlockMessageWrapper();
+    new (&message->header) BlockMessageHeader(iobuf, server, request);
+    BlockMessageWrapper msg(message);
+    *out = std::move(msg);
+    return ZX_OK;
+}
+
+
 void BlockServer::BarrierComplete() {
 #if 0
     // This is the only location that unsets the OpsComplete
@@ -116,7 +133,7 @@ void BlockServer::TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group
 }
 
 void BlockServer::AsyncBlockComplete(BlockMessage* msg, zx_status_t status) {
-    manager_->AsyncCompleteOp(&msg->header.iop, status);
+    manager_->AsyncCompleteOp(&msg->header.iop_, status);
 }
 
 zx_status_t BlockServer::Read(block_fifo_request_t* requests, size_t max, size_t* actual) {
@@ -222,7 +239,7 @@ zx_status_t BlockServer::Service(io_op_t* op) {
     // are capable of implementing hardware barriers.
     msg->op.command &= ~(BLOCK_FL_BARRIER_BEFORE | BLOCK_FL_BARRIER_AFTER);
 #endif
-    bp_->Queue(&msg->op, BlockCompleteCb, msg);
+    bp_->Queue(&msg->bop, BlockCompleteCb, msg);
     return ZX_ERR_ASYNC; // Enqueued.
 }
 
@@ -298,7 +315,6 @@ zx_status_t BlockServer::Create(ServerManager* manager, ddk::BlockProtocolClient
 }
 
 zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) {
-    reqid_t reqid = request->reqid;
     groupid_t group = request->group;
 
     // TODO(ZX-1586): Reduce the usage of this lock (only used to protect
@@ -326,17 +342,11 @@ zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) 
     if (status != ZX_OK) {
         return status;
     }
-
     BlockMessageWrapper wrapper;
-    if ((status = BlockMessageWrapper::Create(block_op_size_, &wrapper)) != ZX_OK) {
+    if ((status = BlockMessageWrapper::Create(block_op_size_, iobuf.CopyPointer(), this, request,
+                                              &wrapper)) != ZX_OK) {
         return status;
     }
-    BlockMessageHeader* header = wrapper.header();
-    header->iobuf = iobuf.CopyPointer();
-    header->server = this;
-    header->reqid = reqid;
-    header->group = group;
-    wrapper.op()->command = OpcodeToCommand(request->opcode);
 
     const uint32_t max_xfer = info_.max_transfer_size / bsz;
     if (max_xfer != 0 && max_xfer < request->length) {
@@ -356,25 +366,19 @@ zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) 
         while (sub_txn_idx != sub_txns) {
             // We'll be using a new BlockMessageWrapper for each sub-component.
             if (!wrapper.valid()) {
-                if ((status = BlockMessageWrapper::Create(block_op_size_, &wrapper)) != ZX_OK) {
+                if ((status = BlockMessageWrapper::Create(block_op_size_, iobuf.CopyPointer(), this,
+                                                          request, &wrapper)) != ZX_OK) {
                     return status;
                 }
-                BlockMessageHeader* header = wrapper.header();
-                header->iobuf = iobuf.CopyPointer();
-                header->server = this;
-                header->reqid = reqid;
-                header->group = group;
-                wrapper.op()->command = OpcodeToCommand(request->opcode);
             }
-
             uint32_t length = fbl::min(len_remaining, max_xfer);
             len_remaining -= length;
 
             // Only set the "AFTER" barrier on the last sub-txn.
-            wrapper.op()->command &= ~(sub_txn_idx == sub_txns - 1 ? 0 :
+            wrapper.bop()->command &= ~(sub_txn_idx == sub_txns - 1 ? 0 :
                                    BLOCK_FL_BARRIER_AFTER);
             // Only set the "BEFORE" barrier on the first sub-txn.
-            wrapper.op()->command &= ~(sub_txn_idx == 0 ? 0 :
+            wrapper.bop()->command &= ~(sub_txn_idx == 0 ? 0 :
                                    BLOCK_FL_BARRIER_BEFORE);
             InQueueAdd(iobuf->vmo(), length, vmo_offset, dev_offset, wrapper.release(),
                        &sub_txns_queue);
@@ -410,15 +414,10 @@ zx_status_t BlockServer::ProcessCloseVmoRequest(block_fifo_request_t* request) {
 zx_status_t BlockServer::ProcessFlushRequest(block_fifo_request_t* request) {
     zx_status_t status;
     BlockMessageWrapper wrapper;
-    if ((status = BlockMessageWrapper::Create(block_op_size_, &wrapper)) != ZX_OK) {
+    status = BlockMessageWrapper::Create(block_op_size_, nullptr, this, request, &wrapper);
+    if (status != ZX_OK) {
         return status;
     }
-    BlockMessageHeader* header = wrapper.header();
-    header->iobuf = nullptr;
-    header->server = this;
-    header->reqid = request->reqid;
-    header->group = request->group;
-    wrapper.op()->command = OpcodeToCommand(request->opcode);
     InQueueAdd(ZX_HANDLE_INVALID, 0, 0, 0, wrapper.release(), &intake_queue_);
     return ZX_OK;
 }
@@ -458,7 +457,7 @@ size_t BlockServer::FillFromIntakeQueue(io_op_t** op_list, size_t max_ops) {
         if (msg == NULL) {
             break;
         }
-        op_list[i] = &msg->header.iop;
+        op_list[i] = &msg->header.iop_;
     }
     return i;
 }
@@ -602,9 +601,9 @@ void BlockServer::OpRelease(void* context, io_op_t* op) {
     BlockMessageHeader* header = wrapper.header();
     // Since iobuf is a RefPtr, it lives at least as long as the txn,
     // and is not discarded underneath the block device driver.
-    header->iobuf = nullptr;
-    header->server->TxnComplete(op->result, header->reqid, header->group);
-    header->server->TxnEnd();
+    header->iobuf_ = nullptr;
+    header->server_->TxnComplete(op->result, header->reqid_, header->group_);
+    header->server_->TxnEnd();
     // Wrapper destructor frees block op here.
 }
 
