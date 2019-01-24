@@ -59,14 +59,12 @@ private:
 };
 
 class BlockServer;
-
-typedef struct block_msg_extra block_msg_extra_t;
-typedef struct block_msg block_msg_t;
+struct BlockMessage;
 
 // All the C++ bits of a block message. This allows the block server to utilize
 // C++ libraries while also using "block_op_t"s, which may require extra space.
-struct block_msg_extra {
-    fbl::DoublyLinkedListNodeState<block_msg_t*> dll_node_state;
+struct BlockMessageHeader {
+    fbl::DoublyLinkedListNodeState<BlockMessage*> dll_node_state;
     fbl::RefPtr<IoBuffer> iobuf;
     BlockServer* server;
     reqid_t reqid;
@@ -75,8 +73,8 @@ struct block_msg_extra {
 };
 
 // A single unit of work transmitted to the underlying block layer.
-struct block_msg {
-    block_msg_extra_t extra;
+struct BlockMessage {
+    BlockMessageHeader header;
     block_op_t op;
     // + Extra space for underlying block_op
 };
@@ -85,66 +83,66 @@ struct block_msg {
 // in C++ code, but may need to reference the "block_op_t" object, it uses
 // a custom type trait.
 struct DoublyLinkedListTraits {
-    static fbl::DoublyLinkedListNodeState<block_msg_t*>& node_state(block_msg_t& obj) {
-        return obj.extra.dll_node_state;
+    static fbl::DoublyLinkedListNodeState<BlockMessage*>& node_state(BlockMessage& obj) {
+        return obj.header.dll_node_state;
     }
 };
 
-using BlockMsgQueue = fbl::DoublyLinkedList<block_msg_t*, DoublyLinkedListTraits>;
+using BlockMsgQueue = fbl::DoublyLinkedList<BlockMessage*, DoublyLinkedListTraits>;
 
-// C++ safe wrapper around block_msg_t.
+// C++ safe wrapper around BlockMessage.
 //
 // It's difficult to allocate a dynamic-length "block_op" as requested by the
 // underlying driver while maintaining valid object construction & destruction;
 // this class attempts to hide those details.
-class BlockMsg {
+class BlockMessageWrapper {
 public:
-    DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(BlockMsg);
+    DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(BlockMessageWrapper);
 
-    bool valid() { return bop_ != nullptr; }
+    bool valid() { return message_ != nullptr; }
 
-    void reset(block_msg_t* bop = nullptr) {
-        if (bop_) {
-            bop_->extra.~block_msg_extra_t();
-            free(bop_);
+    void reset(BlockMessage* message = nullptr) {
+        if (message_) {
+            message_->header.~BlockMessageHeader();
+            free(message_);
         }
-        bop_ = bop;
+        message_ = message;
     }
 
-    block_msg_t* release() {
-        auto bop = bop_;
-        bop_ = nullptr;
-        return bop;
+    BlockMessage* release() {
+        auto message = message_;
+        message_ = nullptr;
+        return message;
     }
-    block_msg_extra_t* extra() { return &bop_->extra; }
-    block_op_t* op() { return &bop_->op; }
+    BlockMessageHeader* header() { return &message_->header; }
+    block_op_t* op() { return &message_->op; }
 
-    BlockMsg(block_msg_t* bop) : bop_(bop) {}
-    BlockMsg() : bop_(nullptr) {}
-    BlockMsg& operator=(BlockMsg&& o) {
+    BlockMessageWrapper(BlockMessage* message) : message_(message) {}
+    BlockMessageWrapper() : message_(nullptr) {}
+    BlockMessageWrapper& operator=(BlockMessageWrapper&& o) {
         reset(o.release());
         return *this;
     }
 
-    ~BlockMsg() {
+    ~BlockMessageWrapper() {
         reset();
     }
 
-    static zx_status_t Create(size_t block_op_size, BlockMsg* out) {
-        block_msg_t* bop = (block_msg_t*) calloc(block_op_size + sizeof(block_msg_t) -
-                                                 sizeof(block_op_t), 1);
-        if (bop == nullptr) {
+    static zx_status_t Create(size_t block_op_size, BlockMessageWrapper* out) {
+        size_t size = block_op_size + sizeof(BlockMessage) - sizeof(block_op_t);
+        BlockMessage* message = static_cast<BlockMessage*>(calloc(1, size));
+        if (message == nullptr) {
             return ZX_ERR_NO_MEMORY;
         }
-        // Placement constructor, followed by explicit destructor in ~BlockMsg();
-        new (&bop->extra) block_msg_extra_t();
-        BlockMsg msg(bop);
+        // Placement constructor, followed by explicit destructor in ~BlockMessageWrapper();
+        new (&message->header) BlockMessageHeader();
+        BlockMessageWrapper msg(message);
         *out = std::move(msg);
         return ZX_OK;
     }
 
 private:
-    block_msg_t* bop_;
+    BlockMessage* message_;
 };
 
 class BlockServer {
@@ -173,7 +171,7 @@ public:
     // (If appropriate) tells the client that their operation is done.
     void TxnComplete(zx_status_t status, reqid_t reqid, groupid_t group);
 
-    void AsyncBlockComplete(BlockMsg* msg, zx_status_t status);
+    void AsyncBlockComplete(BlockMessage* msg, zx_status_t status);
 
     void Shutdown();
     ~BlockServer();

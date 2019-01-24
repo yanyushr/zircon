@@ -44,27 +44,44 @@ void Worker::ThreadMain() {
     q_->WorkerExited(id_);
 }
 
+#define NUM_COMPLETED_OPS 10
+
 void Worker::WorkerLoop() {
     // printf("%s:%u\n", __FUNCTION__, __LINE__);
 
+    zx_status_t status;
     size_t num_ready;
     Scheduler* sched = q_->GetScheduler();
     do {
+        // Drain completed ops.
+        for ( ; ; ) {
+            size_t op_count = 0;
+            io_op_t* op_list[NUM_COMPLETED_OPS];
+            status = sched->GetCompletedOps(op_list, NUM_COMPLETED_OPS, &op_count);
+            if ((status != ZX_OK) || (op_count == 0)) {
+                break;
+            }
+            for (size_t i = 0; i < op_count; i++) {
+                q_->ReleaseOp(op_list[i]);
+            }
+        }
+         // Read new ops.
         if (!cancelled_) {
-            zx_status_t status = AcquireOps(true, &num_ready);
-            if (status == ZX_OK) {
-            } else if (status == ZX_ERR_CANCELED) {
+            status = AcquireOps(true, &num_ready);
+            if (status == ZX_ERR_CANCELED) {
                 // Cancel received.
                 //      drain the queue and exit.
                 assert(cancelled_);
-            } else {
+            } else if (status != ZX_OK) {
+                // Todo: handle better
                 assert(false);
             }
         }
+        // Issue ready ops.
         for ( ; ; ) {
             // Acquire an issue slot.
             io_op_t* op = nullptr;
-            zx_status_t status = sched->GetNextOp(true, &op);
+            status = sched->GetNextOp(true, &op);
             if (status != ZX_OK) {
                 assert((status == ZX_ERR_SHOULD_WAIT) || // No issue slots available.
                        (status == ZX_ERR_UNAVAILABLE));  // No ops available.

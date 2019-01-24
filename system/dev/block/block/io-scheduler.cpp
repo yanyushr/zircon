@@ -16,12 +16,14 @@ static inline io_op_t* node_to_op(list_node_t* node) {
 Scheduler::Scheduler() {
     sem_init(&issue_sem_, 0, SCHED_MAX_ISSUES);
     max_issues_ = SCHED_MAX_ISSUES;     // Todo: make dynamic.
+    list_initialize(&completed_op_list_);
 }
 
 Scheduler::~Scheduler() {
     fbl::AutoLock lock(&lock_);
     assert(num_ready_ops_ == 0);
     assert(num_issued_ops_ == 0);
+    assert(list_is_empty(&completed_op_list_));
 
     // Delete remaining streams.
     for ( ; ; ) {
@@ -162,6 +164,20 @@ zx_status_t Scheduler::GetNextOp(bool wait, io_op_t** op_out) {
     return ZX_OK;
 }
 
+zx_status_t Scheduler::GetCompletedOps(io_op_t** op_list, size_t op_count, size_t* out_count) {
+    fbl::AutoLock lock(&lock_);
+    size_t i;
+    for (i = 0; i < op_count; i++) {
+        list_node_t* op_node = list_remove_head(&completed_op_list_);
+        if (op_node == nullptr) {
+            break;
+        }
+        op_list[i] = node_to_op(op_node);
+    }
+    *out_count = i;
+    return ZX_OK;
+}
+
 void Scheduler::CompleteOp(io_op_t* op, zx_status_t result) {
     fbl::AutoLock lock(&lock_);
     num_issued_ops_--;
@@ -173,9 +189,9 @@ void Scheduler::CompleteOp(io_op_t* op, zx_status_t result) {
         return;
     }
     fbl::AutoLock stream_lock(&stream->lock_);
-    lock.release();
     op->result = result;
     list_delete(&op->node);  // Remove from issued list.
+    list_add_tail(&completed_op_list_, &op->node); // Add to list of ops pending completion.
 }
 
 // Close all streams.

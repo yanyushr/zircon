@@ -35,7 +35,9 @@ public:
 
     zx_status_t InsertOps(io_op_t** op_list, size_t op_count, size_t* out_num_ready);
     zx_status_t GetNextOp(bool wait, io_op_t** op_out);
+    zx_status_t GetCompletedOps(io_op_t** op_list, size_t op_count, size_t* out_count);
     void CompleteOp(io_op_t* op, zx_status_t result);
+
 
     void CloseAll();
     void WaitUntilDrained();
@@ -56,6 +58,7 @@ private:
     uint32_t num_ready_ops_ = 0;     // Number of ops waiting to be issued.
     uint32_t num_issued_ops_ = 0;    // Number of issued ops.
     uint32_t max_issues_;            // Maximum number of concurrent issues.
+    list_node_t completed_op_list_;
 
     StreamIdMap stream_map_;         // Map of id to stream.
     StreamPriList pri_list_[IO_SCHED_NUM_PRI];
