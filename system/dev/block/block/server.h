@@ -74,6 +74,10 @@ struct BlockMessageHeader {
 
 // A single unit of work transmitted to the underlying block layer.
 struct BlockMessage {
+    static BlockMessage* FromIoOp(io_op_t* iop) {
+        return containerof(iop, BlockMessage, header.iop);
+    }
+
     BlockMessageHeader header;
     block_op_t op;
     // + Extra space for underlying block_op

@@ -194,9 +194,7 @@ void BlockServer::TxnEnd() {
 }
 
 zx_status_t BlockServer::Service(io_op_t* op) {
-    BlockMessageHeader* header = containerof(op, BlockMessageHeader, iop);
-    BlockMessage* msg = containerof(header, BlockMessage, header);
-
+    BlockMessage* msg = BlockMessage::FromIoOp(op);
 #if 0
     // TODO: remove barrier handling from this.
     if (deferred_barrier_before_) {
@@ -224,7 +222,7 @@ zx_status_t BlockServer::Service(io_op_t* op) {
     // are capable of implementing hardware barriers.
     msg->op.command &= ~(BLOCK_FL_BARRIER_BEFORE | BLOCK_FL_BARRIER_AFTER);
 #endif
-    bp_->Queue(&msg->op, BlockCompleteCb, &*msg);
+    bp_->Queue(&msg->op, BlockCompleteCb, msg);
     return ZX_ERR_ASYNC; // Enqueued.
 }
 
@@ -600,16 +598,14 @@ zx_status_t BlockServer::OpIssue(void* context, io_op_t* op) {
 }
 
 void BlockServer::OpRelease(void* context, io_op_t* op) {
-    // This is a long way to go for to use BlockMessageWrapper's delete.
-    BlockMessageHeader* header = containerof(op, BlockMessageHeader, iop);
-    BlockMessage* msg = containerof(header, BlockMessage, header);
-    BlockMessageWrapper wrapper(msg);
+    BlockMessageWrapper wrapper(BlockMessage::FromIoOp(op));
+    BlockMessageHeader* header = wrapper.header();
     // Since iobuf is a RefPtr, it lives at least as long as the txn,
     // and is not discarded underneath the block device driver.
     header->iobuf = nullptr;
     header->server->TxnComplete(op->result, header->reqid, header->group);
     header->server->TxnEnd();
-    // wrapper destructor frees block op here.
+    // Wrapper destructor frees block op here.
 }
 
 void BlockServer::OpCancelAcquire(void* context) {
