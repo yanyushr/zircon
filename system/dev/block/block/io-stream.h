@@ -15,10 +15,12 @@
 #include <zircon/listnode.h>
 #include <zircon/types.h>
 
-#define IO_STREAM_FLAG_CLOSED      (1u << 0)
-#define IO_STREAM_FLAG_SCHEDULED   (1u << 1)
-
 namespace ioqueue {
+
+constexpr uint32_t kIoStreamFlagClosed      = (1u << 0);
+constexpr uint32_t kIoStreamFlagScheduled   = (1u << 1);
+// constexpr uint32_t kIoStreamFlagReadBarrierPending  = (1u << 2);
+// constexpr uint32_t kIoStreamFlagWriteBarrierPending = (1u << 3);
 
 class Stream;
 using StreamRef = fbl::RefPtr<Stream>;
@@ -36,27 +38,20 @@ public:
 
     struct KeyTraitsSortById {
         static const uint32_t& GetKey(const Stream& s) { return s.id_; }
-
-        static bool LessThan(const uint32_t s1, const uint32_t s2) {
-            return (s1 < s2);
-        }
-
-        static bool EqualTo(const uint32_t s1, const uint32_t s2) {
-            return (s1 == s2);
-        }
+        static bool LessThan(const uint32_t s1, const uint32_t s2) { return (s1 < s2); }
+        static bool EqualTo(const uint32_t s1, const uint32_t s2) { return (s1 == s2); }
     };
 
     using WAVLTreeSortById = fbl::WAVLTree<uint32_t, StreamRef, KeyTraitsSortById,
                                            WAVLTreeNodeTraitsSortById>;
 
-
     // List support.
     using ListNodeState = fbl::DoublyLinkedListNodeState<StreamRef>;
-    struct ListTraitsByPriority {
-        static ListNodeState& node_state(Stream& s) { return s.pri_node_; }
+    struct ListTraitsUnsorted {
+        static ListNodeState& node_state(Stream& s) { return s.list_node_; }
     };
 
-    using ListSortByPriority = fbl::DoublyLinkedList<StreamRef, ListTraitsByPriority>;
+    using ListUnsorted = fbl::DoublyLinkedList<StreamRef, ListTraitsUnsorted>;
 
     // friend struct KeyTraitsSortById;
     // friend struct WAVLTreeNodeTraitsSortById;
@@ -64,7 +59,7 @@ public:
 
     // These fields are protected by the scheduler lock.
     WAVLTreeNodeState map_node_;
-    ListNodeState pri_node_;
+    ListNodeState list_node_;
     uint32_t id_;
     uint32_t priority_;
 

@@ -30,8 +30,8 @@ Scheduler::~Scheduler() {
         StreamRef stream = stream_map_.pop_front();
         if (stream == nullptr) break;
         fbl::AutoLock stream_lock(&stream->lock_);
-        assert(stream->flags_ & IO_STREAM_FLAG_CLOSED);
-        assert((stream->flags_ & IO_STREAM_FLAG_SCHEDULED) == 0);
+        assert(stream->flags_ & kIoStreamFlagClosed);
+        assert((stream->flags_ & kIoStreamFlagScheduled) == 0);
     }
     sem_destroy(&issue_sem_);
 }
@@ -75,6 +75,7 @@ zx_status_t Scheduler::InsertOps(io_op_t** op_list, size_t op_count, size_t* out
     zx_status_t status = ZX_OK;
     for (size_t i = 0; i < op_count; i++) {
         io_op_t* op = op_list[i];
+        // TODO(sron): avoid redundant lookups of same sid.
         StreamRef stream = FindStreamLocked(op->sid);
         if (stream == nullptr) {
             fprintf(stderr, "Error: Attempted to enqueue op for non-existent stream\n");
@@ -83,7 +84,7 @@ zx_status_t Scheduler::InsertOps(io_op_t** op_list, size_t op_count, size_t* out
             continue;
         }
         fbl::AutoLock stream_lock(&stream->lock_);
-        if (stream->flags_ & IO_STREAM_FLAG_CLOSED) {
+        if (stream->flags_ & kIoStreamFlagClosed) {
             stream_lock.release();
             fprintf(stderr, "Error: attempted to enqueue op for closed stream\n");
             op->result = ZX_ERR_INVALID_ARGS;
@@ -93,8 +94,8 @@ zx_status_t Scheduler::InsertOps(io_op_t** op_list, size_t op_count, size_t* out
         op_list[i] = nullptr; // Clear out inserted ops.
         list_clear_node(&op->node);
         list_add_tail(&stream->ready_op_list_, &op->node);
-        if ((stream->flags_ & IO_STREAM_FLAG_SCHEDULED) == 0) {
-            stream->flags_ |= IO_STREAM_FLAG_SCHEDULED;
+        if ((stream->flags_ & kIoStreamFlagScheduled) == 0) {
+            stream->flags_ |= kIoStreamFlagScheduled;
             pri_list_[stream->priority_].push_back(std::move(stream));
             num_streams_++;
             stream_added = true;
@@ -133,7 +134,6 @@ zx_status_t Scheduler::GetNextOp(bool wait, io_op_t** op_out) {
         sem_post(&issue_sem_);
         return ZX_ERR_UNAVAILABLE;
     }
-
     // Locate the first op in priority list
     StreamRef stream;
     for (uint32_t i = 0; i < IO_SCHED_NUM_PRI; i++) {
@@ -151,16 +151,17 @@ zx_status_t Scheduler::GetNextOp(bool wait, io_op_t** op_out) {
     list_add_tail(&stream->issued_op_list_, op_node);
     num_ready_ops_--;
     num_issued_ops_++;
+    io_op_t* op = node_to_op(op_node);
     if (list_is_empty(&stream->ready_op_list_)) {
         // Do not reinsert into queue.
-        stream->flags_ &= ~IO_STREAM_FLAG_SCHEDULED;
+        stream->flags_ &= ~kIoStreamFlagScheduled;
         num_streams_--;
         stream->event_unscheduled_.Broadcast();
     } else {
         // Insert to back of list of streams at this priority.
         pri_list_[stream->priority_].push_back(std::move(stream));
     }
-    *op_out = node_to_op(op_node);
+    *op_out = op;
     return ZX_OK;
 }
 
@@ -199,7 +200,7 @@ void Scheduler::CloseAll() {
     fbl::AutoLock lock(&lock_);
     for (auto& stream : stream_map_) {
         fbl::AutoLock stream_lock(&stream.lock_);
-        stream.flags_ |= IO_STREAM_FLAG_CLOSED;
+        stream.flags_ |= kIoStreamFlagClosed;
     }
 }
 

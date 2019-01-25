@@ -46,7 +46,7 @@ public:
 
 private:
     using StreamIdMap = Stream::WAVLTreeSortById;
-    using StreamPriList = Stream::ListSortByPriority;
+    using StreamList = Stream::ListUnsorted;
 
     StreamRef FindStreamLocked(uint32_t id);
 
@@ -61,7 +61,7 @@ private:
     list_node_t completed_op_list_;
 
     StreamIdMap stream_map_;         // Map of id to stream.
-    StreamPriList pri_list_[IO_SCHED_NUM_PRI];
+    StreamList pri_list_[IO_SCHED_NUM_PRI];
 };
 
 } // namespace

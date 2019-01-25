@@ -15,7 +15,7 @@ Stream::Stream(uint32_t pri) {
 }
 
 Stream::~Stream() {
-    assert(flags_ & IO_STREAM_FLAG_CLOSED);
+    assert(flags_ & kIoStreamFlagClosed);
     assert(list_is_empty(&ready_op_list_));
     assert(list_is_empty(&issued_op_list_));
 }

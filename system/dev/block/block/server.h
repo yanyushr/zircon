@@ -67,11 +67,7 @@ struct BlockMessageHeader {
     BlockMessageHeader(fbl::RefPtr<IoBuffer> iobuf, BlockServer* server,
                        block_fifo_request_t* request) : iobuf_(iobuf), server_(server),
                        reqid_(request->reqid), group_(request->group) {
-        if (request->opcode & (BLOCKIO_BARRIER_BEFORE | BLOCKIO_BARRIER_AFTER)) {
-            iop_.flags = ioqueue::kOpsFlagFullBarrier;
-        } else {
-            iop_.flags = 0;
-        }
+        iop_.flags = 0;
         iop_.result = ZX_OK;
         iop_.sid = request->group;
     }

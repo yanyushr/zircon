@@ -61,16 +61,16 @@ zx_status_t Queue::CloseStream(uint32_t id) {
              return ZX_ERR_INVALID_ARGS;
         }
         fbl::AutoLock stream_lock(&stream->lock_);
-        stream->flags_ |= IO_STREAM_FLAG_CLOSED;
+        stream->flags_ |= kIoStreamFlagClosed;
         // Once closed, the stream cannot transition from idle to scheduled.
-        if ((stream->flags_ & IO_STREAM_FLAG_SCHEDULED) == 0) {
+        if ((stream->flags_ & kIoStreamFlagScheduled) == 0) {
             sched_.RemoveStreamLocked(stream);
             return ZX_OK;
         }
         lock.release();
         // Wait until all commands have completed.
         stream->event_unscheduled_.Wait(&stream->lock_);
-        assert((stream->flags_ & IO_STREAM_FLAG_SCHEDULED) == 0);
+        assert((stream->flags_ & kIoStreamFlagScheduled) == 0);
         // Have stream lock, but not queue lock. Order of locks requires taking queue lock first.
     }
 }
