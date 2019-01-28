@@ -99,12 +99,11 @@ bool MultipleLayerTest() {
 
     constexpr size_t kBaseReqSize = sizeof(usb_request_t);
     constexpr size_t kFirstLayerReqSize = FirstLayerReq::RequestSize(kBaseReqSize);
-    constexpr size_t kSecondLayerReqSize = SecondLayerReq::RequestSize(kFirstLayerReqSize);
 
     usb::RequestQueue<void> queue;
     for (size_t i = 0; i < 10; i++) {
         std::optional<SecondLayerReq> request;
-        ASSERT_EQ(SecondLayerReq::Alloc(&request, 0, 0, kSecondLayerReqSize, kFirstLayerReqSize),
+        ASSERT_EQ(SecondLayerReq::Alloc(&request, 0, 0, kFirstLayerReqSize),
                   ZX_OK);
         queue.push(std::move(*request));
     }
@@ -137,12 +136,11 @@ bool MultipleLayerWithStorageTest() {
 
     constexpr size_t kBaseReqSize = sizeof(usb_request_t);
     constexpr size_t kFirstLayerReqSize = FirstLayerReq::RequestSize(kBaseReqSize);
-    constexpr size_t kSecondLayerReqSize = SecondLayerReq::RequestSize(kFirstLayerReqSize);
 
     usb::RequestQueue<uint64_t> queue;
     for (size_t i = 0; i < 10; i++) {
         std::optional<SecondLayerReq> request;
-        ASSERT_EQ(SecondLayerReq::Alloc(&request, 0, 0, kSecondLayerReqSize, kFirstLayerReqSize),
+        ASSERT_EQ(SecondLayerReq::Alloc(&request, 0, 0, kFirstLayerReqSize),
                   ZX_OK);
         *request->private_storage() = i;
         EXPECT_EQ(*request->private_storage(), i);
@@ -180,12 +178,11 @@ bool MultipleLayerWithCallbackTest() {
 
     constexpr size_t kBaseReqSize = sizeof(usb_request_t);
     constexpr size_t kFirstLayerReqSize = FirstLayerReq::RequestSize(kBaseReqSize);
-    constexpr size_t kSecondLayerReqSize = SecondLayerReq::RequestSize(kFirstLayerReqSize);
 
     usb::RequestQueue<uint64_t> queue;
     for (size_t i = 0; i < 10; i++) {
         std::optional<SecondLayerReq> request;
-        ASSERT_EQ(SecondLayerReq::Alloc(&request, 0, 0, kSecondLayerReqSize, kFirstLayerReqSize),
+        ASSERT_EQ(SecondLayerReq::Alloc(&request, 0, 0, kFirstLayerReqSize),
                   ZX_OK);
         *request->private_storage() = i;
         EXPECT_EQ(*request->private_storage(), i);

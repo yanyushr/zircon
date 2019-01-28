@@ -19,16 +19,6 @@
 
 namespace usb_bus {
 
-struct UsbRequestInternal {
-    // callback to client driver
-    usb_request_complete_t complete_cb;
-    // for queueing at the usb-bus level
-    list_node_t node;
-};
-#define USB_REQ_TO_DEV_INTERNAL(req, size) \
-    ((UsbRequestInternal *)((uintptr_t)(req) + (size)))
-#define DEV_INTERNAL_TO_USB_REQ(ctx, size) ((usb_request_t *)((uintptr_t)(ctx) - (size)))
-
 // By default we create devices for the interfaces on the first configuration.
 // This table allows us to specify a different configuration for certain devices
 // based on their VID and PID.
@@ -55,7 +45,7 @@ int UsbDevice::CallbackThread() {
     bool done = false;
 
     while (!done) {
-        list_node_t temp_list = LIST_INITIAL_VALUE(temp_list);
+        UnownedRequestQueue temp_queue;
 
         // Wait for new usb requests to complete or for signal to exit this thread.
         sync_completion_wait(&callback_thread_completion_, ZX_TIME_INFINITE);
@@ -67,10 +57,14 @@ int UsbDevice::CallbackThread() {
             done = callback_thread_stop_;
 
             // Copy completed requests to a temp list so we can process them outside of our lock.
-            list_move(&completed_reqs_, &temp_list);
+            temp_queue = std::move(completed_reqs_);
         }
 
         // Call completion callbacks outside of the lock.
+        for (auto req = temp_queue.pop(); req; req = temp_queue.pop()) {
+            req->Complete(ZX_ERR_IO_NOT_PRESENT, 0);
+        }
+/*
         usb_request_t* req;
         UsbRequestInternal* req_int;
         while ((req_int = list_remove_head_type(&temp_list, UsbRequestInternal, node))) {
@@ -78,6 +72,7 @@ int UsbDevice::CallbackThread() {
             usb_request_complete(req, req->response.status, req->response.actual,
                                  &req_int->complete_cb);
         }
+*/
     }
 
     return 0;
@@ -111,8 +106,7 @@ void UsbDevice::RequestComplete(usb_request_t* req) {
     }
 
     // move original request to completed_reqs list so it can be completed on the callback_thread
-    UsbRequestInternal* req_int = USB_REQ_TO_DEV_INTERNAL(req, parent_req_size_);
-    list_add_tail(&completed_reqs_, &req_int->node);
+    completed_reqs_.push_next(UnownedRequest(req, parent_req_size_));
     sync_completion_signal(&callback_thread_completion_);
 }
 
@@ -176,22 +170,21 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
         return ZX_ERR_OUT_OF_RANGE;
     }
 
-    usb_request_t* req = NULL;
+    std::optional<Request> req;
     bool use_free_list = (length == 0);
     if (use_free_list) {
-        fbl::AutoLock lock(&free_reqs_lock_);
-        req = usb_request_pool_get(&free_reqs_, length);
+        req = free_reqs_.Get(length);
     }
 
-    if (req == NULL) {
-        auto status = usb_request_alloc(&req, length, 0, req_size_);
+    if (!req.has_value()) {
+        auto status = Request::Alloc(&req, length, 0, parent_req_size_);
         if (status != ZX_OK) {
             return status;
         }
     }
 
     // fill in protocol data
-    usb_setup_t* setup = &req->setup;
+    usb_setup_t* setup = &req->request()->setup;
     setup->bmRequestType = request_type;
     setup->bRequest = request;
     setup->wValue = value;
@@ -199,14 +192,14 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
     setup->wLength = static_cast<uint16_t>(length);
 
     if (out) {
-        if (length > 0 && write_buffer == NULL) {
+        if (length > 0 && write_buffer == nullptr) {
             return ZX_ERR_INVALID_ARGS;
         }
         if (length > write_size) {
             return ZX_ERR_BUFFER_TOO_SMALL;
         }
     } else {
-        if (length > 0 && out_read_buffer == NULL) {
+        if (length > 0 && out_read_buffer == nullptr) {
             return ZX_ERR_INVALID_ARGS;
         }
         if (length > read_size) {
@@ -215,24 +208,24 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
     }
 
     if (length > 0 && out) {
-        usb_request_copy_to(req, write_buffer, length, 0);
+        req->CopyTo(write_buffer, length, 0);
     }
 
     sync_completion_t completion;
 
-    req->header.device_id = device_id_;
-    req->header.length = length;
+    req->request()->header.device_id = device_id_;
+    req->request()->header.length = length;
     // We call this directly instead of via hci_queue, as it's safe to call our
     // own completion callback, and prevents clients getting into odd deadlocks.
     usb_request_complete_t complete = {
         .callback = ControlComplete,
         .ctx = &completion,
     };
-    hci_.RequestQueue(req, &complete);
+    hci_.RequestQueue(req->request(), &complete);
     auto status = sync_completion_wait(&completion, timeout);
 
     if (status == ZX_OK) {
-        status = req->response.status;
+        status = req->request()->response.status;
     } else if (status == ZX_ERR_TIMED_OUT) {
         // cancel transactions and wait for request to be completed
         sync_completion_reset(&completion);
@@ -243,22 +236,19 @@ zx_status_t UsbDevice::Control(uint8_t request_type, uint8_t request, uint16_t v
         }
     }
     if (status == ZX_OK && !out) {
+        auto actual = req->request()->response.actual;
         if (length > 0) {
-            usb_request_copy_from(req, out_read_buffer, req->response.actual, 0);
+            req->CopyFrom(out_read_buffer, actual, 0);
         }
-        if (out_read_actual != NULL) {
-            *out_read_actual = req->response.actual;
+        if (out_read_actual != nullptr) {
+            *out_read_actual = actual;
         }
     }
 
     if (use_free_list) {
-        fbl::AutoLock lock(&free_reqs_lock_);
-        if (usb_request_pool_add(&free_reqs_, req) != ZX_OK) {
-            zxlogf(TRACE, "Unable to add back request to the free pool\n");
-            usb_request_release(req);
-        }
+        free_reqs_.Add(std::move(*req));
     } else {
-        usb_request_release(req);
+        req->Release();
     }
     return status;
 }
@@ -284,10 +274,12 @@ zx_status_t UsbDevice::UsbControlIn(uint8_t request_type, uint8_t request, uint1
 }
 
 void UsbDevice::UsbRequestQueue(usb_request_t* req, const usb_request_complete_t* complete_cb) {
-    UsbRequestInternal* req_int = USB_REQ_TO_DEV_INTERNAL(req, parent_req_size_);
-    req_int->complete_cb = *complete_cb;
-
     req->header.device_id = device_id_;
+
+    UnownedRequest request(req, *complete_cb, parent_req_size_);
+//    UsbRequestInternal* req_int = USB_REQ_TO_DEV_INTERNAL(req, parent_req_size_);
+//    req_int->complete_cb = *complete_cb;
+
     // save the existing callback, so we can replace them
     // with our own before passing the request to the HCI driver.
     usb_request_complete_t complete = {
@@ -541,7 +533,7 @@ uint64_t UsbDevice::UsbGetCurrentFrame() {
 }
 
 size_t UsbDevice::UsbGetRequestSize() {
-    return req_size_;
+    return UnownedRequest::RequestSize(parent_req_size_);
 }
 
 zx_status_t UsbDevice::MsgGetDeviceSpeed(fidl_txn_t* txn) {
@@ -680,10 +672,6 @@ zx_status_t UsbDevice::Init() {
     ddk_proto_id_ = ZX_PROTOCOL_USB_DEVICE;
 
     parent_req_size_ = hci_.GetRequestSize();
-    req_size_ = parent_req_size_ + sizeof(UsbRequestInternal);
-
-    list_initialize(&completed_reqs_);
-    usb_request_pool_init(&free_reqs_, parent_req_size_ + offsetof(UsbRequestInternal, node));
 
     // read device descriptor
     size_t actual;
