@@ -35,7 +35,7 @@ interface Light {
     GetCount() -> (uint32 count);
 
     // Returns true if the light with given index
-    HasCapability(uint32 index, Capability capability) -> (bool has);
+    HasCapability(uint32 index, Capability capability) -> (zx.status status, bool has);
 
     // Returns the current value (zero or non-zero for simple lights, or 0 - 255 for lights
     // that support brightness). Returns error for RGB lights.
