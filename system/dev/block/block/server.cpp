@@ -340,18 +340,7 @@ zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) 
         return status;
     }
 
-    BlockMessageWrapper wrapper;
     const uint32_t max_xfer = info_.max_transfer_size / bsz;
-    if ((max_xfer == 0) || (request->length <= max_xfer)) {
-        if ((status = BlockMessageWrapper::Create(block_op_size_, iobuf.CopyPointer(), this,
-                                                  request, &wrapper)) != ZX_OK) {
-            return status;
-        }
-        InQueueAdd(iobuf->vmo(), request->length, request->vmo_offset,
-                   request->dev_offset, wrapper.release(), &intake_queue_);
-        return ZX_OK;
-    }
-
     uint32_t len_remaining = request->length;
     uint64_t vmo_offset = request->vmo_offset;
     uint64_t dev_offset = request->dev_offset;
@@ -361,9 +350,10 @@ zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) 
     //
     // Once all of these smaller messages are created, splice
     // them into the input queue together.
-    BlockMsgQueue sub_txns_queue;
     uint32_t sub_txns = fbl::round_up(len_remaining, max_xfer) / max_xfer;
     uint32_t sub_txn_idx = 0;
+    BlockMessageWrapper wrapper;
+    BlockMsgQueue sub_txns_queue;
     while (sub_txn_idx != sub_txns) {
         // We'll be using a new BlockMessageWrapper for each sub-component.
         if ((status = BlockMessageWrapper::Create(block_op_size_, iobuf.CopyPointer(), this,
@@ -381,13 +371,14 @@ zx_status_t BlockServer::ProcessReadWriteRequest(block_fifo_request_t* request) 
         if (sub_txn_idx != 0) {
             wrapper.bop()->command &= ~BLOCK_FL_BARRIER_BEFORE;
         }
-        InQueueAdd(iobuf->vmo(), length, vmo_offset, dev_offset, wrapper.release(),
-                   &sub_txns_queue);
+        InQueueAdd(iobuf->vmo(), length, vmo_offset, dev_offset, wrapper.release(), &intake_queue_);
         vmo_offset += length;
         dev_offset += length;
         sub_txn_idx++;
     }
-    groups_[request->group].CtrAdd(sub_txns - 1);
+    if (sub_txns > 1) {
+        groups_[request->group].CtrAdd(sub_txns - 1);
+    }
     ZX_DEBUG_ASSERT(len_remaining == 0);
     intake_queue_.splice(intake_queue_.end(), sub_txns_queue);
     return ZX_OK;
