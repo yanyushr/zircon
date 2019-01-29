@@ -89,6 +89,7 @@ zx_status_t vim_gpio_init(vim_bus_t* bus) {
         return status;
     }
 
+#if 0
     const pbus_gpio_t gpio_test_gpios[] = {
         {
             // SYS_LED
@@ -114,6 +115,29 @@ zx_status_t vim_gpio_init(vim_bus_t* bus) {
         zxlogf(ERROR, "vim_gpio_init could not add gpio_test_dev: %d\n", status);
         return status;
     }
+#else
+    const pbus_gpio_t gpio_light_gpios[] = {
+        {
+            // SYS_LED
+            .gpio = S912_GPIOAO(9),
+        },
+    };
+
+    const pbus_dev_t gpio_light_dev = {
+        .name = "gpio-light",
+        .vid = PDEV_VID_GENERIC,
+        .pid = PDEV_PID_GENERIC,
+        .did = PDEV_DID_GPIO_LIGHT,
+        .gpio_list = gpio_light_gpios,
+        .gpio_count = countof(gpio_light_gpios),
+    };
+
+    status = pbus_device_add(&bus->pbus, &gpio_light_dev);
+    if (status != ZX_OK) {
+        zxlogf(ERROR, "vim_gpio_init could not add gpio_test_dev: %d\n", status);
+        return status;
+    }
+#endif
 
     return ZX_OK;
 }
