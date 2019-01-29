@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,13 +57,13 @@ static Command commands[] = {
     {
         "count",
         count_command,
-        "init-cdc - returns the number of physical lights"
+        "count - returns the number of physical lights"
     },
     {},
 };
 
 static void usage(void) {
-    fprintf(stderr, "usage: \"lights-test <device-path> <command>\", where command is one of:\n");
+    fprintf(stderr, "usage: \"lights-test [-d <dev-file>] <command>\", where command is one of:\n");
 
     Command* command = commands;
     while (command->name) {
@@ -72,13 +73,32 @@ static void usage(void) {
 }
 
 int main(int argc, const char** argv) {
-    if (argc < 3) {
+    if (argc < 2) {
         usage();
         return -1;
     }
+    argv++;
+    argc--;
 
-    // First argument should be path to driver.
-    const char* path = argv[1];
+    const char* dev_file_name = "000";
+    if (!strcmp(argv[0], "-d")) {
+        if (argc < 3) {
+            usage();
+            return -1;
+        }
+
+        dev_file_name = argv[1];
+        if (strlen(dev_file_name) != 3) {
+            usage();
+            return -1;
+        }
+
+        argv += 2;
+        argc -= 2;
+    }
+
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "/dev/class/light/%s", dev_file_name);
     int fd = open(path, O_RDWR);
     if (fd < 0) {
         printf("Error opening %s\n", path);
@@ -94,11 +114,13 @@ int main(int argc, const char** argv) {
     }
     auto cleanup = fbl::MakeAutoCall([fd, svc]() {zx_handle_close(svc); close(fd); });
     
-    const char* command_name = argv[2];
+    const char* command_name = argv[0];
+    argv++;
+    argc--;
     Command* command = commands;
     while (command->name) {
         if (!strcmp(command_name, command->name)) {
-            return command->command(svc, argc - 2, argv + 2);
+            return command->command(svc, argc, argv);
         }
         command++;
     }

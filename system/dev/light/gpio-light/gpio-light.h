@@ -5,6 +5,7 @@
 #pragma once
 
 #include <ddktl/device.h>
+#include <ddktl/protocol/empty-protocol.h>
 #include <ddktl/protocol/gpio.h>
 #include <fbl/array.h>
 #include <fuchsia/hardware/light/c/fidl.h>
@@ -16,7 +17,7 @@ namespace gpio_light {
 class GpioLight;
 using GpioLightType = ddk::Device<GpioLight, ddk::Messageable>;
 
-class GpioLight : public GpioLightType {
+class GpioLight : public GpioLightType, public ddk::EmptyProtocol<ZX_PROTOCOL_LIGHT> {
 public:
 public:
     explicit GpioLight(zx_device_t* parent)

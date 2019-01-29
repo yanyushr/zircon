@@ -10,7 +10,7 @@ MODULE_TYPE := userapp
 MODULE_GROUP := misc
 
 MODULE_SRCS += \
-    $(LOCAL_DIR)/lights.cpp
+    $(LOCAL_DIR)/lights-test.cpp
 
 MODULE_LIBS := \
     system/ulib/fdio \

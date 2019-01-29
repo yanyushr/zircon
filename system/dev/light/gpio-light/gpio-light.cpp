@@ -151,7 +151,6 @@ zx_status_t GpioLight::Init() {
         }
     }
 
-
     return DdkAdd("gpio-light", DEVICE_ADD_NON_BINDABLE);
 }
 
